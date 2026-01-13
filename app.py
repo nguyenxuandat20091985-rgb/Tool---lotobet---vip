@@ -3,55 +3,72 @@ import re
 import pandas as pd
 from collections import Counter
 
-st.set_page_config(page_title="SUPER AI LOTOBET V3", layout="wide")
+# Tối ưu giao diện điện thoại
+st.set_page_config(page_title="AI LOTOBET V5 - BỆT DETECTOR", layout="wide")
 
-st.title("🚀 SUPER AI LOTOBET - HỆ THỐNG TỔNG HỢP ĐA LUỒNG")
+# Khởi tạo bộ nhớ dài hạn cho AI học tập
+if 'long_term_memory' not in st.session_state:
+    st.session_state.long_term_memory = []
+
+st.title("🚀 SIÊU AI V5 - HỆ THỐNG NHẬN DIỆN CẦU BỆT")
+st.sidebar.header("🤖 TRUNG TÂM ĐIỀU KHIỂN AI")
+
+# Tính năng xóa bộ nhớ để AI học lại từ đầu nếu muốn
+if st.sidebar.button("🗑️ Reset AI & Xóa dữ liệu cũ"):
+    st.session_state.long_term_memory = []
+    st.rerun()
+
 st.markdown("---")
 
 # --- KHU VỰC NHẬP DỮ LIỆU ---
-st.subheader("📊 Tổng hợp dữ liệu đa nguồn")
-input_data = st.text_area("Dán tất cả dữ liệu bạn thu thập được vào đây:", height=200, placeholder="Ví dụ: Kỳ 123: 91043, Kỳ 124: 34193...")
+st.subheader("📊 Nhập kết quả đa nguồn")
+input_data = st.text_area("Dán dữ liệu thô (Copy từ nhà cái, ảnh quét Lens...):", height=150)
 
-if st.button("⚡ PHÂN TÍCH CHUYÊN SÂU & CHỐT SỐ"):
+if st.button("🔥 PHÂN TÍCH CHUYÊN SÂU & SOI CẦU BỆT"):
     if input_data:
-        # Lọc dữ liệu số
-        digits = re.findall(r'\d', input_data)
-        if len(digits) >= 10:
-            kỳ_quays = ["".join(digits[i:i+5]) for i in range(0, len(digits)-4, 5)]
+        # Lọc số thông minh
+        digits = "".join(re.findall(r'\d', input_data))
+        new_kỳs = [digits[i:i+5] for i in range(0, len(digits)-4, 5)]
+        
+        # AI học tập: Cộng dồn vào bộ nhớ
+        st.session_state.long_term_memory.extend(new_kỳs)
+        st.session_state.long_term_memory = st.session_state.long_term_memory[-300:] # Nhớ 300 kỳ gần nhất
+
+        if len(st.session_state.long_term_memory) > 5:
+            all_str = "".join(st.session_state.long_term_memory)
+            counts = Counter(all_str)
             
-            # 1. Thống kê tần suất
-            all_num_str = "".join(kỳ_quays)
-            counts = Counter(all_num_str)
+            # --- THUẬT TOÁN NHẬN DIỆN CẦU BỆT ---
+            st.success(f"✅ AI đã nạp {len(st.session_state.long_term_memory)} kỳ vào bộ nhớ học tập.")
             
-            # 2. Phân tích nhịp cầu (logic nâng cao)
-            st.success(f"🤖 AI đã tổng hợp thành công {len(kỳ_quays)} chu kỳ dữ liệu.")
-            
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
-                st.info("📉 Tần Suất Tổng")
-                df_counts = pd.DataFrame(counts.items(), columns=['Số', 'Lần về']).sort_values(by='Lần về', ascending=False)
-                st.table(df_counts)
+                st.info("📉 BẢNG TẦN SUẤT CHI TIẾT")
+                df = pd.DataFrame(counts.items(), columns=['Số', 'Lần']).sort_values(by='Lần', ascending=False)
+                st.table(df)
 
             with col2:
-                st.warning("🎯 Dự Đoán Vị Trí")
-                # Lấy số hay về ở vị trí cuối (giải đặc biệt)
-                last_digits = [k[-1] for k in kỳ_quays]
-                last_counts = Counter(last_digits)
-                top_last = last_counts.most_common(2)
-                st.write(f"Vị trí cuối tiềm năng: **{top_last[0][0]}**")
-                st.write(f"Nhịp cầu đang chạy: **{top_last[1][0]}**")
-
-            with col3:
-                st.error("💎 CHỐT SỐ TỪ AI")
-                most_common = counts.most_common(3)
-                s1, s2, s3 = most_common[0][0], most_common[1][0], most_common[2][0]
+                st.warning("🔮 DỰ ĐOÁN TỪ HỆ THỐNG AI")
+                top_3 = counts.most_common(3)
+                s1, s2, s3 = top_3[0][0], top_3[1][0], top_3[2][0]
                 
-                st.metric("BẠCH THỦ", f"{s1}")
-                st.metric("SONG THỦ", f"{s1}{s2} - {s2}{s1}")
-                st.metric("XIÊN/HẬU NHỊ", f"{s1}{s3}")
+                st.subheader("⭐ TAM THỦ LÔ (Tỉ lệ thắng cao)")
+                st.code(f"{s1} - {s2} - {s3}", language="text")
+                
+                # Logic soi cầu bệt
+                st.subheader("🚨 CẢNH BÁO CẦU BỆT")
+                recent_data = "".join(st.session_state.long_term_memory[-10:])
+                bet_found = False
+                for num in "0123456789":
+                    if recent_data.count(num) >= 5: # Nếu 1 số xuất hiện > 5 lần trong 10 kỳ
+                        st.error(f"Phát hiện cầu BỆT số: {num} (Rất mạnh!)")
+                        bet_found = True
+                if not bet_found:
+                    st.write("Hiện chưa có cầu bệt rõ ràng.")
 
-            st.write("---")
-            st.caption("Lưu ý: Độ chính xác tăng lên khi bạn dán trên 50 kỳ quay liên tiếp.")
+            st.markdown("---")
+            st.subheader("📈 XU HƯỚNG DÒNG SỐ")
+            st.line_chart(df.set_index('Số'))
         else:
-            st.error("Dữ liệu quá ít để AI có thể phân tích đa nguồn. Vui lòng dán thêm!")
+            st.error("Dữ liệu quá ít. Hãy nạp thêm kỳ quay để AI học hỏi!")
