@@ -3,50 +3,56 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# ================= CONFIG =================
-st.set_page_config("🤖 LOTOBET V8 – TRỢ LÝ", layout="wide")
+st.set_page_config("🤖 LOTOBET V8.1 – TRỢ LÝ", layout="wide")
 
 DATA = "data.csv"
 LOG  = "log.csv"
 
-# ================= INIT FILES =================
+# ================= INIT =================
 def init_files():
     if not os.path.exists(DATA):
-        pd.DataFrame({"time":[], "result":[]}).to_csv(DATA, index=False)
+        pd.DataFrame([["",""]], columns=["time","result"]).to_csv(DATA, index=False)
     if not os.path.exists(LOG):
-        pd.DataFrame({
-            "time":[], "main":[], "backup":[],
-            "safe":[], "decision":[], "note":[]
-        }).to_csv(LOG, index=False)
+        pd.DataFrame(columns=["time","main","backup","safe","decision","note"]).to_csv(LOG, index=False)
 
 init_files()
 
-# ================= LOAD DATA (SAFE) =================
-df = pd.read_csv(DATA)
+# ================= SAFE LOAD =================
+def load_data():
+    try:
+        df = pd.read_csv(DATA, header=None)
+    except:
+        return pd.DataFrame(columns=["time","result"])
 
-# Chuẩn hóa cột
-df.columns = [c.lower().strip() for c in df.columns]
+    # Nếu file có header chuẩn
+    if df.iloc[0].astype(str).str.contains("result|kết|ket", case=False).any():
+        df = pd.read_csv(DATA)
+        df.columns = [c.lower().strip() for c in df.columns]
+    else:
+        # Không có header → gán cứng
+        df.columns = ["time","result"]
 
-# Tự phát hiện cột kết quả
-if "result" not in df.columns:
-    st.error("❌ Không tìm thấy cột kết quả. Dữ liệu bị lỗi.")
-    st.stop()
+    # Lọc dữ liệu hợp lệ
+    df = df[df["result"].astype(str).str.match(r"^\d{5}$", na=False)]
+    df["result"] = df["result"].astype(str)
 
-df["result"] = df["result"].astype(str)
+    return df
 
-# ================= CORE ANALYSIS =================
+df = load_data()
+
+# ================= CORE =================
 def analyze(df):
     total = len(df)
     rows = []
 
     for i in range(100):
         pair = f"{i:02d}"
+        hits = df[df["result"].str.contains(pair, na=False)]
 
-        hits_idx = df[df["result"].str.contains(pair, na=False)].index.tolist()
-        freq = len(hits_idx)
-        gap = total - hits_idx[-1] - 1 if freq else total
+        freq = len(hits)
+        gap = total - hits.index[-1] - 1 if freq else total
 
-        # Bệt (liên tiếp 7 kỳ)
+        # Bệt
         streak = 0
         for r in reversed(df.tail(7)["result"].tolist()):
             if pair in r:
@@ -54,21 +60,21 @@ def analyze(df):
             else:
                 break
 
-        prob = round(freq / total * 100, 2) if total else 0
+        pct = round(freq / total * 100, 2) if total else 0
 
-        safe = (
-            100
+        safe = max(0, min(100,
+            60
+            + pct * 2
             - gap * 4
-            - max(0, streak - 2) * 15
-            + prob * 2
-        )
+            - max(0, streak - 2) * 20
+        ))
 
         rows.append({
             "Cặp": pair,
             "Gap": gap,
             "Bệt": streak,
-            "%": prob,
-            "SAFE": round(max(0, min(100, safe)), 2)
+            "%": pct,
+            "SAFE": round(safe,2)
         })
 
     return pd.DataFrame(rows).sort_values("SAFE", ascending=False)
@@ -83,7 +89,7 @@ def assistant(safe, streak):
     return "🔴 NGHỈ"
 
 # ================= UI =================
-st.title("🤖 LOTOBET V8 – TRỢ LÝ KIẾM TIỀN AN TOÀN")
+st.title("🤖 LOTOBET V8.1 – TRỢ LÝ KIẾM TIỀN AN TOÀN")
 
 col1, col2 = st.columns([1,2])
 
@@ -93,23 +99,19 @@ with col1:
 
     if st.button("LƯU KỲ"):
         if r.isdigit() and len(r) == 5:
-            pd.DataFrame({
-                "time":[datetime.now()],
-                "result":[r]
-            }).to_csv(DATA, mode="a", header=False, index=False)
-            st.success("✅ Đã lưu")
+            pd.DataFrame([[datetime.now(), r]], columns=["time","result"])\
+              .to_csv(DATA, mode="a", header=False, index=False)
+            st.success("✅ Đã lưu kỳ")
             st.rerun()
         else:
             st.error("❌ Cần đúng 5 chữ số")
 
 with col2:
-    if len(df) < 25:
+    if len(df) < 20:
         st.warning("⚠️ Ít dữ liệu → TRỢ LÝ KHUYÊN NGHỈ")
     else:
         ana = analyze(df)
-
-        main = ana.iloc[0]
-        backup = ana.iloc[1]
+        main, backup = ana.iloc[0], ana.iloc[1]
 
         decision = assistant(main["SAFE"], main["Bệt"])
 
@@ -117,24 +119,18 @@ with col2:
 🎯 **Cặp chính:** {main['Cặp']}  
 🎯 **Cặp phụ:** {backup['Cặp']}  
 
-📊 **SAFE:** {main['SAFE']}  
-🔥 **Bệt:** {main['Bệt']}  
-🧠 **TRỢ LÝ:** {decision}
+📊 SAFE: {main['SAFE']}  
+🔥 Bệt: {main['Bệt']}  
+🧠 Trợ lý: {decision}
 
-💰 **Vốn:** 5–10%  
-⛔ **Luật:** Thua 2 tay → DỪNG
+💰 Vốn: 5–10%  
+⛔ Thua 2 tay → NGHỈ
 """)
 
-        pd.DataFrame({
-            "time":[datetime.now()],
-            "main":[main["Cặp"]],
-            "backup":[backup["Cặp"]],
-            "safe":[main["SAFE"]],
-            "decision":[decision],
-            "note":[""]
-        }).to_csv(LOG, mode="a", header=False, index=False)
+        pd.DataFrame([[datetime.now(), main["Cặp"], backup["Cặp"], main["SAFE"], decision, ""]],
+            columns=["time","main","backup","safe","decision","note"])\
+            .to_csv(LOG, mode="a", header=False, index=False)
 
-        st.subheader("📊 Top cặp an toàn")
         st.dataframe(ana.head(10), use_container_width=True)
 
 st.subheader("🕒 Nhật ký trợ lý")
