@@ -4,6 +4,7 @@ import re
 from collections import Counter
 from datetime import datetime
 import os
+from itertools import combinations
 
 # ================== CONFIG ==================
 st.set_page_config(
@@ -13,85 +14,64 @@ st.set_page_config(
 )
 
 DATA_FILE = "data.csv"
-AI_FILE = "ai_weight.csv"
 
-# ================== UTIL ==================
-def load_csv(path, cols):
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=cols)
+# ================== DATA CORE ==================
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return pd.DataFrame(columns=["time", "result"])
+
+    df = pd.read_csv(DATA_FILE)
+
+    # FIX DATA CŨ (pair → result)
+    if "result" not in df.columns and "pair" in df.columns:
+        df["result"] = df["pair"].astype(str).str.zfill(5)
+        df = df[["time", "result"]]
+        df.to_csv(DATA_FILE, index=False)
+
+    return df
 
 def save_results(results):
-    df = load_csv(DATA_FILE, ["time", "number"])
+    df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new = pd.DataFrame([{"time": now, "number": n} for n in results])
+    new = pd.DataFrame([{"time": now, "result": r} for r in results])
     df = pd.concat([df, new], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-def load_ai():
-    return load_csv(AI_FILE, ["key", "weight"])
-
-def update_ai(key, win):
-    ai = load_ai()
-    if key not in ai["key"].values:
-        ai.loc[len(ai)] = [key, 1.0]
-
-    idx = ai[ai["key"] == key].index[0]
-    ai.loc[idx, "weight"] += 0.25 if win else -0.15
-    ai.loc[idx, "weight"] = max(0.2, ai.loc[idx, "weight"])
-    ai.to_csv(AI_FILE, index=False)
-
-# ================== CHECK WIN ==================
-def check_non_fixed(selected, result):
-    digits = set(map(int, str(result).zfill(5)))
-    return set(selected).issubset(digits)
-
-# ================== ANALYSIS CORE ==================
-def analyze_numbers(df):
-    numbers = df["number"].astype(str).str.zfill(5)
-
-    digit_counter = Counter()
-    pair_counter = Counter()
-
-    for n in numbers:
-        ds = list(map(int, n))
-        digit_counter.update(ds)
-        pair_counter.update([int(n[-2:])])
-
-    return digit_counter, pair_counter
+# ================== ANALYSIS ==================
+def analyze_pairs(df):
+    pairs = Counter()
+    for r in df["result"]:
+        r = str(r).zfill(5)
+        pairs.update([int(r[-2:])])
+    return pairs.most_common(10)
 
 def analyze_non_fixed(df, k):
-    freq = Counter()
-    numbers = df["number"].astype(str).str.zfill(5)
+    results = df["result"].astype(str).str.zfill(5)
+    stats = []
 
-    for n in numbers:
-        for d in set(n):
-            freq[d] += 1
-
-    combos = []
-    digits = list(range(10))
-    from itertools import combinations
-
-    for c in combinations(digits, k):
+    for comb in combinations(range(10), k):
         hit = 0
-        for n in numbers:
-            if set(map(int, c)).issubset(set(map(int, n))):
+        for r in results:
+            if set(map(str, comb)).issubset(set(r)):
                 hit += 1
-        rate = hit / len(numbers) * 100
-        combos.append({
-            "set": c,
-            "hits": hit,
-            "rate": round(rate, 2)
+        rate = hit / len(results) * 100
+        stats.append({
+            "Bộ số": "-".join(map(str, comb)),
+            "Số lần trúng": hit,
+            "Tỉ lệ %": round(rate, 2)
         })
 
-    return sorted(combos, key=lambda x: x["rate"], reverse=True)
+    return sorted(stats, key=lambda x: x["Tỉ lệ %"], reverse=True)
 
 # ================== UI ==================
-st.title("🎯 LOTOBET AUTO PRO – V3 (CHUẨN KU)")
+st.title("🎯 LOTOBET AUTO PRO – V3 (CHUẨN KU – FIXED)")
 
 with st.expander("📥 NHẬP KẾT QUẢ 5 TINH", expanded=True):
-    raw = st.text_area("Dán kết quả (mỗi dòng 1 số 5 tinh)", height=120)
-    if st.button("💾 LƯU DỮ LIỆU"):
+    raw = st.text_area(
+        "Mỗi dòng 1 số 5 tinh (VD: 12864)",
+        height=120
+    )
+    if st.button("💾 LƯU KẾT QUẢ"):
         nums = re.findall(r"\d{5}", raw)
         if nums:
             save_results(nums)
@@ -99,11 +79,11 @@ with st.expander("📥 NHẬP KẾT QUẢ 5 TINH", expanded=True):
         else:
             st.error("Không nhận diện được số 5 tinh")
 
-df = load_csv(DATA_FILE, ["time", "number"])
-st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
+df = load_data()
+st.info(f"📊 Tổng dữ liệu hiện có: {len(df)} kỳ")
 
-if len(df) < 50:
-    st.warning("Cần tối thiểu 50 kỳ để phân tích mạnh")
+if len(df) < 30:
+    st.warning("Cần tối thiểu 30 kỳ để phân tích")
     st.stop()
 
 # ================== TABS ==================
@@ -115,46 +95,36 @@ tab1, tab2, tab3 = st.tabs([
 
 # ================== TAB 1 ==================
 with tab1:
-    st.subheader("📈 Phân tích HÀNG SỐ 5 TINH (2 số cuối)")
+    st.subheader("📈 HÀNG SỐ 5 TINH (2 SỐ CUỐI)")
+    top_pairs = analyze_pairs(df)
+    st.table(pd.DataFrame(top_pairs, columns=["Cặp số", "Số lần về"]))
 
-    digit_cnt, pair_cnt = analyze_numbers(df)
-    top_pairs = pair_cnt.most_common(10)
-
-    st.table(pd.DataFrame(top_pairs, columns=["Cặp", "Số lần"]))
-
-    best_pair = top_pairs[0][0]
-    st.success(f"🎯 KẾT LUẬN: Ưu tiên đánh cặp **{best_pair}**")
+    best = top_pairs[0]
+    st.success(f"🎯 KHUYẾN NGHỊ: ĐÁNH CẶP **{best[0]}**")
 
 # ================== TAB 2 ==================
 with tab2:
-    st.subheader("🟢 Không cố định – 2 SỐ 5 TINH")
-
+    st.subheader("🟢 KHÔNG CỐ ĐỊNH – 2 SỐ 5 TINH")
     top2 = analyze_non_fixed(df, 2)[:5]
-    df2 = pd.DataFrame(top2)
-    df2["Bộ số"] = df2["set"].apply(lambda x: "-".join(map(str, x)))
-    st.table(df2[["Bộ số", "hits", "rate"]])
+    st.table(pd.DataFrame(top2))
 
-    best2 = top2[0]
+    best = top2[0]
     st.success(
-        f"🎯 KẾT LUẬN: Đánh **2 số {best2['set']}** | "
-        f"Tỉ lệ trúng {best2['rate']}%"
+        f"🎯 ĐÁNH 2 SỐ **{best['Bộ số']}** | "
+        f"Tỉ lệ {best['Tỉ lệ %']}%"
     )
 
 # ================== TAB 3 ==================
 with tab3:
-    st.subheader("🔥 Không cố định – 3 SỐ 5 TINH")
-
+    st.subheader("🔥 KHÔNG CỐ ĐỊNH – 3 SỐ 5 TINH")
     top3 = analyze_non_fixed(df, 3)[:5]
-    df3 = pd.DataFrame(top3)
-    df3["Bộ số"] = df3["set"].apply(lambda x: "-".join(map(str, x)))
-    st.table(df3[["Bộ số", "hits", "rate"]])
+    st.table(pd.DataFrame(top3))
 
-    best3 = top3[0]
+    best = top3[0]
     st.success(
-        f"🎯 KẾT LUẬN: Đánh **3 số {best3['set']}** | "
-        f"Tỉ lệ trúng {best3['rate']}%"
+        f"🎯 ĐÁNH 3 SỐ **{best['Bộ số']}** | "
+        f"Tỉ lệ {best['Tỉ lệ %']}%"
     )
 
-# ================== FOOTER ==================
 st.markdown("---")
-st.caption("🚀 LOTOBET AUTO PRO V3 | Phân tích chuẩn KU | Không đoán mò")
+st.caption("🚀 LOTOBET AUTO PRO V3 | FIXED | Phân tích đúng luật KU")
