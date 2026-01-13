@@ -2,89 +2,70 @@ import streamlit as st
 import pandas as pd
 import re
 from collections import Counter
+from datetime import datetime
 import os
 
-st.set_page_config(page_title="LOTOBET AI – 2 SỐ 5 TINH", layout="centered")
+st.set_page_config(page_title="LOTOBET AUTO – CẤP 1", layout="centered")
 
-DATA_DIR = "data"
-ALL_DATA = f"{DATA_DIR}/data_all.csv"
-NEW_DATA = f"{DATA_DIR}/data_new.csv"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# ---------- STYLE ----------
-st.markdown("""
-<style>
-body {background:#0e1117;color:white;}
-.card {background:#1e1e2f;padding:15px;border-radius:14px;margin-top:12px;}
-.num {font-size:30px;color:#00e5ff;font-weight:bold;text-align:center;}
-.warn {background:#4b0000;color:#ff4b4b;padding:10px;border-radius:10px;}
-</style>
-""", unsafe_allow_html=True)
+DATA_FILE = "data.csv"
 
 # ---------- DATA ----------
-def load_csv(path):
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=["pair"])
+def load_data():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    return pd.DataFrame(columns=["time", "pair"])
 
 def save_pairs(pairs):
-    df_new = pd.DataFrame(pairs, columns=["pair"])
-    df_new.to_csv(NEW_DATA, mode="a", header=not os.path.exists(NEW_DATA), index=False)
+    df = load_data()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new = pd.DataFrame(
+        [{"time": now, "pair": p} for p in pairs]
+    )
+    df = pd.concat([df, new], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
 
-    df_all = load_csv(ALL_DATA)
-    df_all = pd.concat([df_all, df_new], ignore_index=True)
-    df_all.to_csv(ALL_DATA, index=False)
-
-def analyze_top3(df):
-    nums = []
-    for p in df["pair"]:
-        nums.append(p // 10)
-        nums.append(p % 10)
-
-    counter = Counter(nums)
-    hot = [n for n,_ in counter.most_common(6)]
-
-    return [(hot[i], hot[i+1]) for i in range(0,6,2)]
-
-def detect_bet(df):
+# ---------- ANALYSIS ----------
+def detect_signal(df):
     recent = df.tail(10)["pair"]
-    c = Counter(recent)
-    return [k for k,v in c.items() if v >= 3]
+    counter = Counter(recent)
+
+    strong = [k for k, v in counter.items() if v >= 3]
+
+    if strong:
+        return "🟢 NÊN ĐÁNH", strong
+
+    if len(df) < 30:
+        return "🟡 CHƯA ĐỦ DỮ LIỆU", []
+
+    return "🔴 KHÔNG NÊN ĐÁNH", []
 
 # ---------- UI ----------
-st.title("🎯 LOTOBET AI – 2 SỐ 5 TINH")
+st.title("🟢 LOTOBET AUTO – CẤP 1")
 
-with st.expander("📥 NẠP KẾT QUẢ 5 TINH"):
-    raw = st.text_area("Dán kết quả (vd: 71765 00387 50554)", height=120)
-    if st.button("🚀 NẠP DỮ LIỆU"):
-        digits = re.findall(r"\d", raw)
-        rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-        pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
+raw = st.text_area(
+    "📥 Dán kết quả 5 tinh (vd: 71829 00384 55921)",
+    height=120
+)
 
-        if pairs:
-            save_pairs(pairs)
-            st.success(f"Đã nạp {len(pairs)} kỳ")
-        else:
-            st.error("Không nhận diện được dữ liệu")
+if st.button("💾 LƯU KỲ MỚI"):
+    digits = re.findall(r"\d", raw)
+    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
+    pairs = [int(r[-2] + r[-1]) for r in rows if len(r) == 5]
 
-df_all = load_csv(ALL_DATA)
-df_new = load_csv(NEW_DATA)
-
-st.info(f"📊 Tổng dữ liệu: {len(df_all)} | 🆕 Mới: {len(df_new)}")
-
-if st.button("🔮 PHÂN TÍCH KỲ TIẾP"):
-    if len(df_all) < 10:
-        st.warning("Cần ít nhất 10 kỳ dữ liệu")
+    if pairs:
+        save_pairs(pairs)
+        st.success(f"Đã lưu {len(pairs)} kỳ")
     else:
-        bet = detect_bet(df_all)
-        if bet:
-            st.markdown(f"<div class='warn'>🚨 CẦU BỆT: {', '.join(map(str, bet))}</div>", unsafe_allow_html=True)
+        st.error("Không nhận diện được dữ liệu")
 
-        top3 = analyze_top3(df_all)
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("🎯 3 CẶP 2 SỐ 5 TINH MẠNH NHẤT")
-        for a,b in top3:
-            st.markdown(f"<div class='num'>{a} - {b}</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+df = load_data()
+st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-st.caption("⚠️ Công cụ thống kê – không đảm bảo trúng. Quản lý vốn.")
+if len(df) >= 10:
+    signal, nums = detect_signal(df)
+    st.subheader("🚦 TÍN HIỆU TỰ ĐỘNG")
+    st.markdown(f"### {signal}")
+    if nums:
+        st.write("🎯 Cặp đang có cầu:", nums)
+
+st.caption("Tool tự động cấp 1 – Không hack – Không đảm bảo trúng")
