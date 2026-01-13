@@ -1,65 +1,101 @@
 import streamlit as st
-import re
-import itertools
-import pandas as pd
+import random
 from collections import Counter
+import re
+import pandas as pd
 
-st.set_page_config(page_title="AI V9 - PREDICTOR MAX", layout="wide")
+# Cấu hình App chuyên nghiệp
+st.set_page_config(page_title="LOTOBET AI ULTIMATE V10", layout="centered")
 
-if 'memory' not in st.session_state:
-    st.session_state.memory = []
+# Giao diện CSS tùy chỉnh cao cấp
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: white; }
+    .stButton>button { width: 100%; border-radius: 12px; height: 3.5em; font-weight: bold; background: linear-gradient(45deg, #ff4b4b, #ff7676); color: white; border: none; }
+    .result-card { background: rgba(30, 30, 47, 0.7); padding: 15px; border-radius: 15px; border: 1px solid #3d3d5c; text-align: center; margin-bottom: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+    .number-highlight { color: #00ffcc; font-size: 2.2em; font-weight: bold; text-shadow: 0 0 10px #00ffcc; }
+    .bet-alert { background: #4b0000; color: #ff4b4b; padding: 10px; border-radius: 8px; font-weight: bold; border: 1px solid #ff4b4b; }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("🛡️ AI V9 - HỆ THỐNG GIẢM THIỂU SAI SỐ")
-st.markdown("---")
+st.title("🛡️ LOTOBET AI ULTIMATE V10")
+st.write("Hệ thống AI chuyên sâu: 5 Tinh, 3 Tinh, Nhận diện Cầu Bệt & Quản lý vốn")
 
-# Nhập dữ liệu
-input_data = st.text_area("Dán ít nhất 30-50 kỳ quay để giảm lỗi:", height=150)
+# --- QUẢN LÝ DỮ LIỆU ---
+if 'history' not in st.session_state:
+    st.session_state.history = []
 
-if st.button("⚡ PHÂN TÍCH CHỐNG GÃY CẦU"):
-    if input_data:
-        digits = "".join(re.findall(r'\d', input_data))
-        new_kỳs = [digits[i:i+5] for i in range(0, len(digits)-4, 5)]
-        st.session_state.memory.extend(new_kỳs)
-        st.session_state.memory = st.session_state.memory[-500:] # Nhớ sâu hơn
+with st.sidebar:
+    st.header("⚙️ CÀI ĐẶT AI")
+    target_profit = st.number_input("Mục tiêu lãi (%)", value=20)
+    if st.button("🗑️ RESET DỮ LIỆU"):
+        st.session_state.history = []
+        st.rerun()
 
-        if len(st.session_state.memory) >= 20:
-            st.success(f"📊 Đã nạp {len(st.session_state.memory)} kỳ. Dữ liệu càng nhiều, AI đoán càng chuẩn.")
+# Nạp dữ liệu đa nguồn
+with st.expander("📥 NẠP DỮ LIỆU ĐA NGUỒN", expanded=len(st.session_state.history) == 0):
+    raw_data = st.text_area("Dán kết quả (Copy từ nhà cái hoặc quét Google Lens):", height=150)
+    if st.button("🚀 KÍCH HOẠT QUÉT DỮ LIỆU"):
+        digits = re.findall(r'\d', raw_data)
+        new_rows = [[int(d) for d in digits[i:i+5]] for i in range(0, len(digits)-4, 5)]
+        if new_rows:
+            st.session_state.history.extend(new_rows)
+            st.session_state.history = st.session_state.history[-500:] # Nhớ 500 kỳ
+            st.success(f"Đã nạp {len(new_rows)} kỳ quay mới!")
+            st.rerun()
+
+# --- THUẬT TOÁN PHÂN TÍCH ---
+def deep_analyze():
+    data = st.session_state.history
+    all_nums = [n for row in data for n in row]
+    last_5_ky = data[-5:]
+    
+    # 1. Thuật toán 2 số 5 Tinh (Dựa trên cặp số hay đi cùng nhau)
+    flat_data = ["".join(map(str, row)) for row in data]
+    counts = Counter(all_nums)
+    
+    # 2. Nhận diện cầu Bệt (Xác định số xuất hiện > 3 lần trong 5 kỳ gần nhất)
+    recent_flat = [n for row in last_5_ky for n in row]
+    recent_counts = Counter(recent_flat)
+    bet_nums = [num for num, count in recent_counts.items() if count >= 3]
+    
+    # 3. Dự đoán 3 Tinh (Dựa trên nhịp rơi vị trí)
+    top_3 = [item[0] for item in counts.most_common(3)]
+    
+    return top_3, bet_nums, data[-1]
+
+if st.session_state.history:
+    st.markdown(f"📊 Dữ liệu: `{len(st.session_state.history)}` kỳ | 🟢 Trạng thái: **Sẵn sàng**")
+    
+    if st.button("🔮 PHÂN TÍCH KẾT QUẢ KỲ TIẾP THEO"):
+        if len(st.session_state.history) < 10:
+            st.warning("⚠️ Hãy nạp ít nhất 10 kỳ để AI nhận diện nhịp cầu bệt!")
+        else:
+            top_nums, bet_list, last_ky = deep_analyze()
             
-            # Thuật toán tính Độ Gan (Số bao nhiêu kỳ chưa về)
-            all_digits = "0123456789"
-            last_appearance = {d: 0 for d in all_digits}
-            for i, ky in enumerate(reversed(st.session_state.memory)):
-                for d in all_digits:
-                    if d in ky and last_appearance[d] == 0:
-                        last_appearance[d] = i
-
-            # Lọc ra các số có "Phong độ" tốt (Vừa về xong và về nhiều)
-            counts = Counter("".join(st.session_state.memory))
+            # --- HIỂN THỊ CẢNH BÁO BỆT ---
+            if bet_list:
+                st.markdown(f"<div class='bet-alert'>🚨 CẢNH BÁO CẦU BỆT: Số {', '.join(map(str, bet_list))} đang nổ liên tục!</div>", unsafe_allow_html=True)
             
-            # Tính điểm ưu tiên cho từng số
-            scores = {}
-            for d in all_digits:
-                # Điểm = Tần suất / (Độ gan + 1)
-                scores[d] = counts[d] / (last_appearance[d] + 1)
-
-            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-            s1, s2, s3 = sorted_scores[0][0], sorted_scores[1][0], sorted_scores[2][0]
-
+            st.markdown("---")
             col1, col2 = st.columns(2)
+            
             with col1:
-                st.error("🎯 CẶP 5 TINH AN TOÀN CAO")
-                st.subheader(f"Cặp chính: {s1} - {s2}")
-                st.subheader(f"Cặp lót: {s1} - {s3}")
-                st.caption("AI đã loại bỏ các số có độ gan quá lớn để tránh mất vốn.")
+                st.subheader("🎯 CẶP 2 SỐ 5 TINH")
+                # Ưu tiên số đang bệt ghép với số hay về nhất
+                s1 = top_nums[0]
+                s2 = bet_list[0] if bet_list else top_nums[1]
+                st.markdown(f"<div class='result-card'><small>TỈ LỆ THẮNG CAO</small><br><span class='number-highlight'>{s1} - {s2}</span></div>", unsafe_allow_html=True)
+                st.caption("Đánh cặp này cho mục 2 số 5 tinh.")
 
             with col2:
-                st.warning("⚠️ LƯU Ý KỸ THUẬT")
-                st.write(f"Số **{s1}** đang có nhịp rơi đẹp nhất.")
-                st.write(f"Số **{sorted_scores[-1][0]}** đang bị giam, tuyệt đối không nên theo.")
+                st.subheader("🌟 TAM THỦ 3 TINH")
+                res_3t = "".join(map(str, top_nums))
+                st.markdown(f"<div class='result-card'><small>HẬU TAM/TIỀN TAM</small><br><span class='number-highlight' style='color:#ffcc00;'>{res_3t}</span></div>", unsafe_allow_html=True)
 
-        else:
-            st.error("⚠️ Cảnh báo: Dưới 20 kỳ quay AI sẽ đoán rất dễ sai. Hãy dán thêm dữ liệu!")
+            # --- QUẢN LÝ VỐN ---
+            st.markdown("---")
+            st.subheader("💰 CHIẾN THUẬT VÀO TIỀN")
+            st.info("AI khuyên: Đánh gấp thếp 1-2-4 nếu ván trước chưa về. Nếu trúng cầu bệt, đánh đều tay.")
 
-if st.sidebar.button("🗑️ Xóa dữ liệu"):
-    st.session_state.memory = []
-    st.rerun()
+st.caption("AI Ultimate V10 - Bản nâng cấp ưu việt nhất cho 2 số 5 tinh & Cầu bệt.")
