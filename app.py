@@ -4,28 +4,17 @@ import itertools
 import pandas as pd
 from collections import Counter
 
-st.set_page_config(page_title="AI LOTOBET V8 - PRO TRADER", layout="wide")
+st.set_page_config(page_title="AI LOTOBET V7 - 5 TINH", layout="wide")
 
 if 'memory' not in st.session_state:
     st.session_state.memory = []
 
-st.title("🚀 SIÊU AI V8 - CHIẾN THUẬT VÀO TIỀN & SOI CẦU")
+st.title("🚀 SIÊU AI V7 - CHUYÊN GIA SOI CẶP 2 SỐ 5 TINH")
 st.markdown("---")
 
-# --- KHU VỰC QUẢN LÝ VỐN ---
-st.sidebar.header("💰 CÀI ĐẶT VỐN")
-von = st.sidebar.number_input("Nhập tổng vốn của bạn:", min_value=0, value=1000)
-muc_cuoc = st.sidebar.selectbox("Chiến thuật vào tiền:", ["Đều tay (1-1-1)", "Gấp thếp nhẹ (1-2-4)", "Tiến cấp (1-3-8)"])
+input_data = st.text_area("Dán dữ liệu kết quả tại đây:", height=150)
 
-st.sidebar.markdown("---")
-if st.sidebar.button("🗑️ Reset Dữ Liệu"):
-    st.session_state.memory = []
-    st.rerun()
-
-# --- NHẬP DỮ LIỆU ---
-input_data = st.text_area("Dán kết quả thô vào đây:", height=150)
-
-if st.button("🔥 PHÂN TÍCH & CHỐT ĐƠN"):
+if st.button("🔥 PHÂN TÍCH CẶP 5 TINH"):
     if input_data:
         digits = "".join(re.findall(r'\d', input_data))
         new_kỳs = [digits[i:i+5] for i in range(0, len(digits)-4, 5)]
@@ -33,38 +22,47 @@ if st.button("🔥 PHÂN TÍCH & CHỐT ĐƠN"):
         st.session_state.memory = st.session_state.memory[-300:]
 
         if len(st.session_state.memory) >= 2:
-            all_str = "".join(st.session_state.memory)
-            counts = Counter(all_str)
-            top_3 = counts.most_common(3)
-            s1, s2, s3 = top_3[0][0], top_3[1][0], top_3[2][0]
-
+            st.success(f"📊 Đã nạp {len(st.session_state.memory)} kỳ quay vào bộ nhớ AI.")
+            
+            # --- THUẬT TOÁN SOI CẶP 5 TINH ---
+            all_pairs = []
+            for ky in st.session_state.memory:
+                # Lấy các số độc nhất trong 1 kỳ (vì quy tắc 2 số 5 tinh chỉ cần xuất hiện)
+                unique_nums = sorted(list(set(ky)))
+                # Tạo các cặp kết hợp (ví dụ kỳ 12121 -> có số 1 và 2 -> cặp 1-2)
+                pairs = list(itertools.combinations(unique_nums, 2))
+                all_pairs.extend(pairs)
+            
+            pair_counts = Counter(all_pairs).most_common(5)
+            
             col1, col2 = st.columns(2)
             
             with col1:
-                st.error("🎯 CHỐT CẶP 2 SỐ 5 TINH")
-                st.subheader(f"Cặp 1: {s1} - {s2}")
-                st.subheader(f"Cặp 2: {s1} - {s3}")
-                st.subheader(f"Cặp 3: {s2} - {s3}")
-                st.write("---")
-                st.info("💡 Cách đánh: Cược cả 3 cặp để phủ xác suất cao nhất.")
+                st.error("💎 TOP 5 CẶP 2 SỐ 5 TINH (Hay về cùng nhau nhất)")
+                for pair, count in pair_counts:
+                    st.subheader(f"Cặp: {pair[0]} - {pair[1]}")
+                    st.write(f"Đã xuất hiện cùng nhau {count} lần")
 
             with col2:
-                st.warning("💵 BẢNG VÀO TIỀN GỢI Ý")
-                unit = von // 100 # Đơn vị cược cơ bản là 1% vốn
-                if muc_cuoc == "Đều tay (1-1-1)":
-                    st.write(f"Ván 1: Mỗi cặp {unit}đ")
-                    st.write(f"Ván 2: Mỗi cặp {unit}đ")
-                elif muc_cuoc == "Gấp thếp nhẹ (1-2-4)":
-                    st.write(f"Ván 1: Mỗi cặp {unit}đ")
-                    st.write(f"Ván 2: Mỗi cặp {unit*2}đ (Nếu ván 1 thua)")
-                    st.write(f"Ván 3: Mỗi cặp {unit*4}đ (Nếu ván 2 thua)")
+                st.warning("🔮 DỰ ĐOÁN KỲ TIẾP THEO")
+                # Lấy 3 số đơn lẻ về nhiều nhất để gợi ý cặp xoay vòng
+                all_digits = "".join(st.session_state.memory)
+                top_3_single = Counter(all_digits).most_common(3)
+                s1, s2, s3 = top_3_single[0][0], top_3_single[1][0], top_3_single[2][0]
                 
-                st.success(f"Dự kiến lãi mỗi ván: ~{unit * 2}đ")
+                st.info("Gợi ý tổ hợp 2 số 5 tinh:")
+                st.code(f"Cặp chính: {s1}, {s2}", language="text")
+                st.code(f"Cặp lót 1: {s1}, {s3}", language="text")
+                st.code(f"Cặp lót 2: {s2}, {s3}", language="text")
 
-            # Nhận diện nhịp cầu bệt
-            recent_data = "".join(st.session_state.memory[-5:])
-            for num in s1+s2+s3:
-                if recent_data.count(num) >= 4:
-                    st.toast(f"Cảnh báo: Số {num} đang BỆT rất mạnh!", icon="🚨")
+            # --- NHẬN DIỆN CẦU BỆT 5 TINH ---
+            st.markdown("---")
+            recent_ky = st.session_state.memory[-1]
+            st.write(f"Kỳ gần nhất: **{recent_ky}**")
+            st.caption("AI khuyên: Nếu kỳ trước nổ bệt (ví dụ 12121), hãy ưu tiên đánh lại cặp của kỳ đó cho kỳ sau.")
         else:
-            st.error("Hãy nạp thêm dữ liệu để AI tính toán!")
+            st.error("Cần thêm dữ liệu kỳ quay để phân tích cặp!")
+
+if st.sidebar.button("🗑️ Xóa bộ nhớ AI"):
+    st.session_state.memory = []
+    st.rerun()
