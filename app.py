@@ -5,110 +5,96 @@ from collections import Counter
 from datetime import datetime
 import os
 
-st.set_page_config(page_title="LOTOBET AUTO PRO – CẤP 1 (V9.2)", layout="centered")
+st.set_page_config(page_title="LOTOBET AUTO PRO – CẤP 1", layout="centered")
 
 DATA_FILE = "data.csv"
 LOG_FILE = "predict_log.csv"
 
-# ---------- LOAD / INIT ----------
+# ---------- LOAD / SAVE ----------
 def load_csv(path, cols):
     if os.path.exists(path):
         return pd.read_csv(path)
-    df = pd.DataFrame(columns=cols)
-    df.to_csv(path, index=False)
-    return df
+    return pd.DataFrame(columns=cols)
 
-# ---------- SAVE DATA ----------
 def save_pairs(pairs):
     df = load_csv(DATA_FILE, ["time", "pair"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for p in pairs:
-        df.loc[len(df)] = [now, p]
+    df_new = pd.DataFrame(
+        [{"time": now, "pair": p} for p in pairs]
+    )
+    df = pd.concat([df, df_new], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-def log_prediction(pair, advice, score):
-    df = load_csv(LOG_FILE, ["time", "pair", "score", "advice"])
+def log_prediction(pairs, advice):
+    df = load_csv(LOG_FILE, ["time", "pairs", "advice"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    df.loc[len(df)] = [now, pair, score, advice]
+    df.loc[len(df)] = [now, ",".join(map(str, pairs)), advice]
     df.to_csv(LOG_FILE, index=False)
 
 # ---------- ANALYSIS ----------
 def analyze(df):
     total = len(df)
-    counter = Counter(df["pair"])
+    last10 = df.tail(10)["pair"].tolist()
+
+    counter_total = Counter(df["pair"])
+    counter_10 = Counter(last10)
+
     results = []
 
-    for pair, cnt in counter.items():
-        # gap
-        last_idx = df[df["pair"] == pair].index
-        gap = total - 1 - last_idx[-1] if len(last_idx) > 0 else total
-
-        freq = cnt / total
-        score = round((freq * 100) - gap * 1.5, 2)
+    for pair, cnt10 in counter_10.items():
+        p_recent = cnt10 / 10
+        p_total = counter_total[pair] / total
+        score = round((p_recent * 0.6 + p_total * 0.4) * 100, 2)
 
         results.append({
             "pair": pair,
-            "số_lần": cnt,
-            "gap": gap,
-            "tần_suất_%": round(freq * 100, 2),
+            "10_kỳ": cnt10,
+            "tổng": counter_total[pair],
             "score_%": score
         })
 
-    results = [r for r in results if r["score_%"] > 0]
     return sorted(results, key=lambda x: x["score_%"], reverse=True)
 
 # ---------- UI ----------
-st.title("🤖 LOTOBET AUTO PRO – CẤP 1 (V9.2)")
-st.caption("Phân tích an toàn • Không ép đánh • Có quyền nghỉ")
+st.title("🟢 LOTOBET AUTO PRO – CẤP 1")
 
-raw = st.text_area("📥 Dán kết quả 5 tinh (VD: 57221)", height=120)
+raw = st.text_area("📥 Dán kết quả 5 tinh", height=120)
 
 if st.button("💾 LƯU KỲ MỚI"):
     digits = re.findall(r"\d", raw)
     rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-    pairs = [int(r[-2] + r[-1]) for r in rows if len(r) == 5]
+    pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
 
     if pairs:
         save_pairs(pairs)
         st.success(f"Đã lưu {len(pairs)} kỳ")
-        st.rerun()
     else:
-        st.error("❌ Cần đúng định dạng 5 chữ số")
+        st.error("Không nhận diện được dữ liệu")
 
 df = load_csv(DATA_FILE, ["time", "pair"])
 st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-# ---------- RESULT ----------
 if len(df) >= 20:
     analysis = analyze(df)
 
-    if analysis:
-        st.subheader("📊 TOP 5 CẶP TIỀM NĂNG")
-        st.table(analysis[:5])
+    st.subheader("📊 PHÂN TÍCH CẶP SỐ (TOP 5)")
+    st.table(analysis[:5])
 
-        best = analysis[0]
+    best = analysis[0]
+    advice = "🟢 NÊN ĐÁNH" if best["10_kỳ"] >= 3 else "🟡 CÂN NHẮC"
 
-        if best["gap"] <= 1:
-            advice = "🛑 CẦU NÓNG – NÊN NGHỈ"
-        elif best["score_%"] < 5:
-            advice = "🟡 KHÔNG RÕ RÀNG"
-        else:
-            advice = "🟢 CÓ THỂ ĐÁNH NHỎ"
+    st.subheader("🚦 KHUYẾN NGHỊ")
+    st.markdown(f"""
+    **Cặp đề xuất:** `{best['pair']}`  
+    **Xác suất tương đối:** `{best['score_%']}%`  
+    **Khuyến nghị:** {advice}
+    """)
 
-        st.subheader("🚦 KHUYẾN NGHỊ")
-        st.markdown(f"""
-        **Cặp đề xuất:** `{best['pair']}`  
-        **Score:** `{best['score_%']}%`  
-        **Gap:** `{best['gap']}`  
-        **Khuyến nghị:** **{advice}**
-        """)
+    if st.button("📌 LƯU DỰ ĐOÁN KỲ NÀY"):
+        log_prediction([best["pair"]], advice)
+        st.success("Đã lưu dự đoán")
 
-        if st.button("📌 LƯU DỰ ĐOÁN"):
-            log_prediction(best["pair"], advice, best["score_%"])
-            st.success("Đã lưu dự đoán")
-
-# ---------- LOG ----------
 st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
-log_df = load_csv(LOG_FILE, ["time", "pair", "score", "advice"])
+log_df = load_csv(LOG_FILE, ["time", "pairs", "advice"])
 if not log_df.empty:
     st.table(log_df.tail(10))
