@@ -8,21 +8,38 @@ st.set_page_config("LOTOBET V7 – TRỢ LÝ", layout="wide")
 DATA = "data.csv"
 LOG  = "log.csv"
 
-for f, cols in [
-    (DATA, ["Time","Result"]),
-    (LOG, ["Time","Main","Backup","Decision","SAFE","Note"])
-]:
-    if not os.path.exists(f):
-        pd.DataFrame(columns=cols).to_csv(f, index=False)
+# ===== INIT FILE =====
+if not os.path.exists(DATA):
+    pd.DataFrame(columns=["Time","Result"]).to_csv(DATA, index=False)
+
+if not os.path.exists(LOG):
+    pd.DataFrame(columns=["Time","Main","Backup","Decision","SAFE","Note"]).to_csv(LOG, index=False)
+
+# ===== LOAD + FIX DATA =====
+df = pd.read_csv(DATA)
+
+# FIX DATA CŨ (V3, V4, V5)
+if "Kết quả" in df.columns:
+    df.rename(columns={"Kết quả": "Result"}, inplace=True)
+    df.to_csv(DATA, index=False)
+
+if "Result" not in df.columns:
+    st.error("❌ File dữ liệu lỗi. Hãy xoá data.csv và chạy lại.")
+    st.stop()
+
+df["Result"] = df["Result"].astype(str)
 
 # ===== CORE AI =====
 def analyze(df):
     total = len(df)
-    res = []
+    rows = []
 
     for i in range(100):
         p = f"{i:02d}"
-        hits = df[df["Result"].str.contains(p)]
+
+        mask = df["Result"].str.contains(p, na=False)
+        hits = df[mask]
+
         freq = len(hits)
         gap = total - hits.index[-1] - 1 if freq else total
 
@@ -43,7 +60,7 @@ def analyze(df):
             + prob * 2
         )
 
-        res.append({
+        rows.append({
             "Cặp": p,
             "Gap": gap,
             "Bệt": streak,
@@ -51,12 +68,12 @@ def analyze(df):
             "SAFE": round(max(0, min(100, safe)), 2)
         })
 
-    return pd.DataFrame(res).sort_values("SAFE", ascending=False)
+    return pd.DataFrame(rows).sort_values("SAFE", ascending=False)
 
-def assistant_decision(row):
-    if row["SAFE"] >= 70:
+def assistant_decision(safe):
+    if safe >= 70:
         return "🟢 ĐÁNH"
-    elif row["SAFE"] >= 55:
+    elif safe >= 55:
         return "🟡 GIẢM TIỀN"
     else:
         return "🔴 NGHỈ"
@@ -69,53 +86,54 @@ col1, col2 = st.columns([1,2])
 with col1:
     st.subheader("📥 Nhập kết quả 5 tinh")
     r = st.text_input("Ví dụ: 57221")
+
     if st.button("LƯU"):
         if r.isdigit() and len(r) == 5:
             pd.DataFrame({
                 "Time": [datetime.now()],
                 "Result": [r]
             }).to_csv(DATA, mode="a", header=False, index=False)
-            st.success("Đã lưu kết quả")
+            st.success("✅ Đã lưu")
             st.rerun()
         else:
-            st.error("Sai định dạng (cần đúng 5 số)")
+            st.error("❌ Cần đúng 5 số")
 
 with col2:
-    df = pd.read_csv(DATA)
-
     if len(df) < 20:
         st.warning("⚠️ Dữ liệu < 20 kỳ → TRỢ LÝ KHUYÊN NGHỈ")
     else:
         ana = analyze(df)
-        pick = ana.head(2)
 
-        decision = assistant_decision(pick.iloc[0])
+        main = ana.iloc[0]
+        backup = ana.iloc[1]
 
+        decision = assistant_decision(main["SAFE"])
         note = ""
-        if pick.iloc[0]["Bệt"] >= 3:
+
+        if main["Bệt"] >= 3:
             decision = "🔴 NGHỈ"
-            note = "Bệt quá sâu – rủi ro cao"
+            note = "Bệt sâu – rủi ro cao"
 
         st.success(f"""
-🎯 **Cặp chính:** {pick.iloc[0]['Cặp']}  
-🎯 **Cặp phụ:** {pick.iloc[1]['Cặp']}  
+🎯 **Cặp chính:** {main['Cặp']}  
+🎯 **Cặp phụ:** {backup['Cặp']}  
 
 🧠 **TRỢ LÝ:** {decision}  
-📊 **SAFE:** {pick.iloc[0]['SAFE']}  
+📊 **SAFE:** {main['SAFE']}  
 💰 **Vốn:** 5–10% / tay  
 📌 **Luật:** Thua 2 tay → DỪNG
 """)
 
         pd.DataFrame({
             "Time": [datetime.now()],
-            "Main": [pick.iloc[0]["Cặp"]],
-            "Backup": [pick.iloc[1]["Cặp"]],
+            "Main": [main["Cặp"]],
+            "Backup": [backup["Cặp"]],
             "Decision": [decision],
-            "SAFE": [pick.iloc[0]["SAFE"]],
+            "SAFE": [main["SAFE"]],
             "Note": [note]
         }).to_csv(LOG, mode="a", header=False, index=False)
 
-        st.subheader("📊 Top cặp an toàn nhất")
+        st.subheader("📊 Top cặp an toàn")
         st.dataframe(ana.head(10), use_container_width=True)
 
 st.subheader("🕒 Nhật ký trợ lý")
