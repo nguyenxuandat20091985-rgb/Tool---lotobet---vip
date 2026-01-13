@@ -1,103 +1,122 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import os
 from datetime import datetime
-from PIL import Image
 
-# Thử import Plotly, nếu lỗi sẽ báo rõ cho người dùng
-try:
-    import plotly.express as px
-except ImportError:
-    st.error("Thiếu thư viện 'plotly'. Vui lòng thêm vào requirements.txt hoặc chạy 'pip install plotly'")
+st.set_page_config("LOTOBET V7 – TRỢ LÝ", layout="wide")
 
-# --- CẤU HÌNH HỆ THỐNG ---
-st.set_page_config(page_title="LOTOBET V3 PRO", layout="wide")
-DATA_FILE = "loto_database.csv"
+DATA = "data.csv"
+LOG  = "log.csv"
 
-# Khởi tạo file lưu trữ nếu chưa có
-if not os.path.exists(DATA_FILE):
-    pd.DataFrame(columns=['Thời gian', 'Kết quả']).to_csv(DATA_FILE, index=False)
+for f, cols in [
+    (DATA, ["Time","Result"]),
+    (LOG, ["Time","Main","Backup","Decision","SAFE","Note"])
+]:
+    if not os.path.exists(f):
+        pd.DataFrame(columns=cols).to_csv(f, index=False)
 
-# --- THUẬT TOÁN PHÂN TÍCH NHỊP (GAP ANALYSIS) ---
-def analyze_trends(df):
-    """Phân tích nhịp rơi từ dữ liệu thực tế"""
-    if df.empty: return pd.DataFrame()
-    
-    results = []
-    total_records = len(df)
-    
-    for n in range(10):
-        digit = str(n)
-        # Tìm các kỳ mà số này xuất hiện trong dãy 5 tinh
-        appearances = df.index[df['Kết quả'].astype(str).str.contains(digit)].tolist()
-        
-        if not appearances:
-            gap = total_records
-            score = 0
-        else:
-            gap = (total_records - 1) - appearances[-1]
-            # Tính khoảng cách giữa các lần xuất hiện (giống đường nối màu xanh trong ảnh)
-            intervals = [appearances[i] - appearances[i-1] for i in range(1, len(appearances))]
-            avg_interval = sum(intervals) / len(intervals) if intervals else 5
-            
-            # Tính điểm tin cậy: Ưu tiên số đang đến nhịp rơi trung bình
-            score = max(0, 100 - abs(gap - avg_interval) * 15)
-            
-        results.append({
-            "Số": n,
-            "Nhịp hiện tại (Gap)": gap,
-            "Điểm tin cậy": round(score, 2),
-            "Trạng thái": "🔥 Chờ nổ" if gap >= 3 else "Đang chạy"
+# ===== CORE AI =====
+def analyze(df):
+    total = len(df)
+    res = []
+
+    for i in range(100):
+        p = f"{i:02d}"
+        hits = df[df["Result"].str.contains(p)]
+        freq = len(hits)
+        gap = total - hits.index[-1] - 1 if freq else total
+
+        # bệt
+        streak = 0
+        for r in reversed(df.tail(7)["Result"]):
+            if p in r:
+                streak += 1
+            else:
+                break
+
+        prob = round(freq / total * 100, 2)
+
+        safe = (
+            100
+            - gap * 5
+            - max(0, streak - 2) * 12
+            + prob * 2
+        )
+
+        res.append({
+            "Cặp": p,
+            "Gap": gap,
+            "Bệt": streak,
+            "%": prob,
+            "SAFE": round(max(0, min(100, safe)), 2)
         })
-    
-    return pd.DataFrame(results).sort_values("Điểm tin cậy", ascending=False)
 
-# --- GIAO DIỆN NGƯỜI DÙNG ---
-st.title("📊 LOTOBET V3 - TRỢ LÝ SOI CẦU 2 SỐ 5 TINH")
-st.info("Dựa trên dữ liệu thực tế từ bảng kết quả và biểu đồ nhịp rơi.")
+    return pd.DataFrame(res).sort_values("SAFE", ascending=False)
 
-col_in, col_out = st.columns([1, 2])
+def assistant_decision(row):
+    if row["SAFE"] >= 70:
+        return "🟢 ĐÁNH"
+    elif row["SAFE"] >= 55:
+        return "🟡 GIẢM TIỀN"
+    else:
+        return "🔴 NGHỈ"
 
-with col_in:
-    st.subheader("📥 Nhập dữ liệu kỳ mới")
-    # Phương pháp nhập tay an toàn nhất khi OCR gặp lỗi thư viện
-    raw_input = st.text_input("Nhập dãy 5 số (VD: 57221)", placeholder="Ví dụ: 01234")
-    
-    if st.button("Lưu kết quả"):
-        if len(raw_input) == 5 and raw_input.isdigit():
-            new_data = pd.DataFrame({'Thời gian': [datetime.now().strftime("%H:%M:%S")], 'Kết quả': [raw_input]})
-            new_data.to_csv(DATA_FILE, mode='a', header=False, index=False)
-            st.success(f"Đã lưu kỳ mới: {raw_input}")
+# ===== UI =====
+st.title("🤖 LOTOBET V7 – TRỢ LÝ KIẾM TIỀN AN TOÀN")
+
+col1, col2 = st.columns([1,2])
+
+with col1:
+    st.subheader("📥 Nhập kết quả 5 tinh")
+    r = st.text_input("Ví dụ: 57221")
+    if st.button("LƯU"):
+        if r.isdigit() and len(r) == 5:
+            pd.DataFrame({
+                "Time": [datetime.now()],
+                "Result": [r]
+            }).to_csv(DATA, mode="a", header=False, index=False)
+            st.success("Đã lưu kết quả")
             st.rerun()
         else:
-            st.error("Vui lòng nhập đúng 5 chữ số!")
+            st.error("Sai định dạng (cần đúng 5 số)")
 
-    st.divider()
-    st.write("📖 **Quy tắc 2 số 5 tinh:** Chọn 2 số, chỉ cần xuất hiện trong 5 vị trí là thắng. Tỷ lệ ăn 6.61.")
+with col2:
+    df = pd.read_csv(DATA)
 
-with col_out:
-    df_history = pd.read_csv(DATA_FILE)
-    
-    if not df_history.empty:
-        analysis_data = analyze_trends(df_history)
-        
-        # Biểu đồ trực quan
-        st.subheader("📈 Biểu đồ độ nóng & Nhịp rơi")
-        fig = px.bar(analysis_res := analysis_data, x='Số', y='Điểm tin cậy', 
-                     color='Điểm tin cậy', color_continuous_scale='Turbo',
-                     labels={'Điểm tin cậy': 'Mức độ tiềm năng'})
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Gợi ý dàn số
-        top_numbers = analysis_data.head(4)['Số'].tolist()
-        st.success(f"🎯 **Gợi ý dàn 4 số tiềm năng:** {', '.join(map(str, top_numbers))}")
-        
-        with st.expander("Xem bảng chi tiết thông số"):
-            st.table(analysis_data)
+    if len(df) < 20:
+        st.warning("⚠️ Dữ liệu < 20 kỳ → TRỢ LÝ KHUYÊN NGHỈ")
     else:
-        st.warning("Chưa có dữ liệu để phân tích. Hãy nhập kỳ đầu tiên ở bên trái.")
+        ana = analyze(df)
+        pick = ana.head(2)
 
-st.subheader("🕒 Lịch sử 10 kỳ gần nhất")
-if not df_history.empty:
-    st.dataframe(df_history.tail(10), use_container_width=True)
+        decision = assistant_decision(pick.iloc[0])
+
+        note = ""
+        if pick.iloc[0]["Bệt"] >= 3:
+            decision = "🔴 NGHỈ"
+            note = "Bệt quá sâu – rủi ro cao"
+
+        st.success(f"""
+🎯 **Cặp chính:** {pick.iloc[0]['Cặp']}  
+🎯 **Cặp phụ:** {pick.iloc[1]['Cặp']}  
+
+🧠 **TRỢ LÝ:** {decision}  
+📊 **SAFE:** {pick.iloc[0]['SAFE']}  
+💰 **Vốn:** 5–10% / tay  
+📌 **Luật:** Thua 2 tay → DỪNG
+""")
+
+        pd.DataFrame({
+            "Time": [datetime.now()],
+            "Main": [pick.iloc[0]["Cặp"]],
+            "Backup": [pick.iloc[1]["Cặp"]],
+            "Decision": [decision],
+            "SAFE": [pick.iloc[0]["SAFE"]],
+            "Note": [note]
+        }).to_csv(LOG, mode="a", header=False, index=False)
+
+        st.subheader("📊 Top cặp an toàn nhất")
+        st.dataframe(ana.head(10), use_container_width=True)
+
+st.subheader("🕒 Nhật ký trợ lý")
+st.dataframe(pd.read_csv(LOG).tail(10), use_container_width=True)
