@@ -1,97 +1,103 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import cv2
 import numpy as np
-import pytesseract
-from PIL import Image
 import os
 from datetime import datetime
+from PIL import Image
 
-# --- KHỞI TẠO CẤU HÌNH ---
+# Thử import Plotly, nếu lỗi sẽ báo rõ cho người dùng
+try:
+    import plotly.express as px
+except ImportError:
+    st.error("Thiếu thư viện 'plotly'. Vui lòng thêm vào requirements.txt hoặc chạy 'pip install plotly'")
+
+# --- CẤU HÌNH HỆ THỐNG ---
 st.set_page_config(page_title="LOTOBET V3 PRO", layout="wide")
+DATA_FILE = "loto_database.csv"
 
-# Kiểm tra thư viện tesseract (cần thiết cho OCR)
-# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' 
-
-DATA_FILE = "loto_data.csv"
+# Khởi tạo file lưu trữ nếu chưa có
 if not os.path.exists(DATA_FILE):
-    pd.DataFrame(columns=['time', 'numbers']).to_csv(DATA_FILE, index=False)
+    pd.DataFrame(columns=['Thời gian', 'Kết quả']).to_csv(DATA_FILE, index=False)
 
-# --- HÀM XỬ LÝ NHẬN DIỆN ẢNH (OCR) ---
-def scan_results_from_image(image):
-    try:
-        img = np.array(image)
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        # Xử lý ảnh để làm nổi bật số mở thưởng
-        thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)[1]
-        text = pytesseract.image_to_string(thresh, config='--psm 6 digits')
-        # Lọc các dãy 5 số từ kết quả mở thưởng
-        found = [n for n in text.split() if len(n) == 5]
-        return found
-    except Exception as e:
-        st.error(f"Lỗi quét ảnh: {e}")
-        return []
-
-# --- THUẬT TOÁN SOI CẦU NHỊP RƠI ---
-def calculate_trends(df):
+# --- THUẬT TOÁN PHÂN TÍCH NHỊP (GAP ANALYSIS) ---
+def analyze_trends(df):
+    """Phân tích nhịp rơi từ dữ liệu thực tế"""
     if df.empty: return pd.DataFrame()
+    
     results = []
-    # Phân tích từ số 0 đến 9
+    total_records = len(df)
+    
     for n in range(10):
-        target = str(n)
-        # Kiểm tra sự xuất hiện trong lịch sử
-        appearances = df.index[df['numbers'].str.contains(target)].tolist()
+        digit = str(n)
+        # Tìm các kỳ mà số này xuất hiện trong dãy 5 tinh
+        appearances = df.index[df['Kết quả'].astype(str).str.contains(digit)].tolist()
         
         if not appearances:
-            gap = len(df)
+            gap = total_records
             score = 0
         else:
-            gap = len(df) - 1 - appearances[-1]
-            # Tính nhịp trung bình (Gap analysis)
+            gap = (total_records - 1) - appearances[-1]
+            # Tính khoảng cách giữa các lần xuất hiện (giống đường nối màu xanh trong ảnh)
             intervals = [appearances[i] - appearances[i-1] for i in range(1, len(appearances))]
-            avg_gap = sum(intervals) / len(intervals) if intervals else 5
-            # Điểm tin cậy dựa trên độ nóng và nhịp rơi
-            score = max(0, 100 - abs(gap - avg_gap) * 12)
+            avg_interval = sum(intervals) / len(intervals) if intervals else 5
             
-        results.append({"Số": n, "Độ Gan (Gap)": gap, "Điểm Tin Cậy": round(score, 2)})
-    return pd.DataFrame(results).sort_values("Điểm Tin Cậy", ascending=False)
+            # Tính điểm tin cậy: Ưu tiên số đang đến nhịp rơi trung bình
+            score = max(0, 100 - abs(gap - avg_interval) * 15)
+            
+        results.append({
+            "Số": n,
+            "Nhịp hiện tại (Gap)": gap,
+            "Điểm tin cậy": round(score, 2),
+            "Trạng thái": "🔥 Chờ nổ" if gap >= 3 else "Đang chạy"
+        })
+    
+    return pd.DataFrame(results).sort_values("Điểm tin cậy", ascending=False)
 
-# --- GIAO DIỆN CHÍNH ---
-st.title("🛡️ TRỢ LÝ LOTOBET V3 - PHÂN TÍCH 2 SỐ 5 TINH")
+# --- GIAO DIỆN NGƯỜI DÙNG ---
+st.title("📊 LOTOBET V3 - TRỢ LÝ SOI CẦU 2 SỐ 5 TINH")
+st.info("Dựa trên dữ liệu thực tế từ bảng kết quả và biểu đồ nhịp rơi.")
 
-col1, col2 = st.columns([1, 2])
+col_in, col_out = st.columns([1, 2])
 
-with col1:
-    st.subheader("📸 Cập nhật dữ liệu")
-    uploaded_file = st.file_uploader("Gửi ảnh kết quả mới nhất", type=['jpg', 'png'])
-    if uploaded_file:
-        img = Image.open(uploaded_file)
-        st.image(img, caption="Ảnh đã tải lên", width=250)
-        if st.button("Bắt đầu quét số"):
-            data = scan_results_from_image(img)
-            if data:
-                st.success(f"Đã tìm thấy: {data}")
-                for d in data:
-                    new_row = pd.DataFrame({'time': [datetime.now()], 'numbers': [d]})
-                    new_row.to_csv(DATA_FILE, mode='a', header=False, index=False)
-                st.rerun()
+with col_in:
+    st.subheader("📥 Nhập dữ liệu kỳ mới")
+    # Phương pháp nhập tay an toàn nhất khi OCR gặp lỗi thư viện
+    raw_input = st.text_input("Nhập dãy 5 số (VD: 57221)", placeholder="Ví dụ: 01234")
+    
+    if st.button("Lưu kết quả"):
+        if len(raw_input) == 5 and raw_input.isdigit():
+            new_data = pd.DataFrame({'Thời gian': [datetime.now().strftime("%H:%M:%S")], 'Kết quả': [raw_input]})
+            new_data.to_csv(DATA_FILE, mode='a', header=False, index=False)
+            st.success(f"Đã lưu kỳ mới: {raw_input}")
+            st.rerun()
+        else:
+            st.error("Vui lòng nhập đúng 5 chữ số!")
 
-with col2:
+    st.divider()
+    st.write("📖 **Quy tắc 2 số 5 tinh:** Chọn 2 số, chỉ cần xuất hiện trong 5 vị trí là thắng. Tỷ lệ ăn 6.61.")
+
+with col_out:
     df_history = pd.read_csv(DATA_FILE)
+    
     if not df_history.empty:
-        analysis = calculate_trends(df_history)
+        analysis_data = analyze_trends(df_history)
         
-        # Biểu đồ nhịp rơi (Sửa lỗi Plotly)
-        st.subheader("📊 Biểu đồ Nhịp Rơi (Trend-line)")
-        fig = px.bar(analysis, x='Số', y='Điểm Tin Cậy', color='Điểm Tin Cậy', color_continuous_scale='Reds')
+        # Biểu đồ trực quan
+        st.subheader("📈 Biểu đồ độ nóng & Nhịp rơi")
+        fig = px.bar(analysis_res := analysis_data, x='Số', y='Điểm tin cậy', 
+                     color='Điểm tin cậy', color_continuous_scale='Turbo',
+                     labels={'Điểm tin cậy': 'Mức độ tiềm năng'})
         st.plotly_chart(fig, use_container_width=True)
         
-        # Gợi ý dàn số (Tỷ lệ 6.61)
-        top_nums = analysis.head(4)['Số'].tolist()
-        st.warning(f"💡 Dàn đề xuất (Đánh 2 số 5 tinh): **{top_nums}**")
+        # Gợi ý dàn số
+        top_numbers = analysis_data.head(4)['Số'].tolist()
+        st.success(f"🎯 **Gợi ý dàn 4 số tiềm năng:** {', '.join(map(str, top_numbers))}")
+        
+        with st.expander("Xem bảng chi tiết thông số"):
+            st.table(analysis_data)
     else:
-        st.info("Hãy tải ảnh kết quả hoặc nhập dữ liệu để bắt đầu phân tích.")
+        st.warning("Chưa có dữ liệu để phân tích. Hãy nhập kỳ đầu tiên ở bên trái.")
 
-st.subheader("🕒 Lịch sử kỳ mở thưởng gần nhất")
-st.dataframe(df_history.tail(10), use_container_width=True)
+st.subheader("🕒 Lịch sử 10 kỳ gần nhất")
+if not df_history.empty:
+    st.dataframe(df_history.tail(10), use_container_width=True)
