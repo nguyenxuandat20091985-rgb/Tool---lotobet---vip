@@ -1,164 +1,135 @@
 import streamlit as st
+import pandas as pd
+import numpy as np
+import pytesseract
+import cv2
 import re
-import os
-import csv
-import itertools
+from PIL import Image
 from collections import Counter
+import os
 
 # ================== CONFIG ==================
-st.set_page_config(page_title="LOTOBET AI – 2 SỐ 5 TINH", layout="centered")
+st.set_page_config(
+    page_title="LOTOBET AI – 2 SỐ 5 TINH",
+    layout="centered"
+)
 
-# ================== CSS ==================
+DATA_DIR = "data"
+ALL_DATA = f"{DATA_DIR}/data_all.csv"
+NEW_DATA = f"{DATA_DIR}/data_new.csv"
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# ================== STYLE ==================
 st.markdown("""
 <style>
-.main { background-color: #0e1117; color: white; }
-.stButton>button {
-    width: 100%;
-    height: 3em;
-    border-radius: 12px;
-    font-weight: bold;
-    background: linear-gradient(45deg, #ff4b4b, #ff7a7a);
-    border: none;
-}
-.card {
-    background: rgba(30,30,50,0.85);
-    padding: 18px;
-    border-radius: 16px;
-    margin-bottom: 14px;
-    text-align: center;
-    border: 1px solid #3a3a5a;
-}
-.big {
-    font-size: 2.1em;
-    font-weight: bold;
-    color: #00ffcc;
-}
-.alert {
-    background: #4b0000;
-    color: #ffb3b3;
-    padding: 12px;
-    border-radius: 12px;
-    border: 1px solid #ff4b4b;
-    font-weight: bold;
-}
+body {background:#0e1117;color:white;}
+.big-title {font-size:22px;font-weight:700;color:#00e676;text-align:center;}
+.card {background:#1e1e2f;padding:15px;border-radius:14px;margin-top:12px;}
+.num {font-size:32px;color:#00e5ff;font-weight:bold;text-align:center;}
+.warn {background:#4b0000;color:#ff4b4b;padding:10px;border-radius:10px;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================== DATA MEMORY ==================
-DATA_DIR = "data"
-DATA_FILE = os.path.join(DATA_DIR, "history.csv")
-os.makedirs(DATA_DIR, exist_ok=True)
+# ================== DATA ==================
+def load_csv(path):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=["pair"])
 
-def load_history():
-    if not os.path.exists(DATA_FILE):
-        return []
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return [list(map(int, row)) for row in csv.reader(f) if len(row) == 5]
+def save_data(new_pairs):
+    df_new = pd.DataFrame(new_pairs, columns=["pair"])
+    df_new.to_csv(NEW_DATA, mode="a", header=not os.path.exists(NEW_DATA), index=False)
 
-def save_history(rows):
-    with open(DATA_FILE, "a", encoding="utf-8", newline="") as f:
-        csv.writer(f).writerows(rows)
+    df_all = load_csv(ALL_DATA)
+    df_all = pd.concat([df_all, df_new]).drop_duplicates()
+    df_all.to_csv(ALL_DATA, index=False)
 
-# ================== SESSION ==================
-if "history" not in st.session_state:
-    st.session_state.history = load_history()
+# ================== OCR ==================
+def ocr_2so_5tinh(image):
+    img = np.array(image.convert("L"))
+    img = cv2.threshold(img, 150, 255, cv2.THRESH_BINARY)[1]
 
-# ================== HEADER ==================
-st.title("🎯 LOTOBET AI – 2 SỐ 5 TINH")
-st.caption("Phân tích cặp mạnh nhất – đánh 3 cặp / kỳ")
+    text = pytesseract.image_to_string(
+        img,
+        config="--psm 6 -c tessedit_char_whitelist=0123456789"
+    )
 
-# ================== SIDEBAR ==================
-with st.sidebar:
-    st.header("⚙️ HỆ THỐNG")
-    st.write(f"📊 Tổng kỳ đã lưu: **{len(st.session_state.history)}**")
-    if st.button("🗑️ RESET TOÀN BỘ"):
-        st.session_state.history = []
-        if os.path.exists(DATA_FILE):
-            os.remove(DATA_FILE)
-        st.rerun()
+    digits = re.findall(r"\d", text)
+    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
 
-# ================== INPUT ==================
-with st.expander("📥 NẠP KẾT QUẢ 5 TINH", expanded=True):
-    raw = st.text_area("Dán kết quả (vd: 12121 90834 ...)", height=120)
-    if st.button("🚀 NẠP DỮ LIỆU"):
+    pairs = []
+    for r in rows:
+        if len(r) == 5:
+            pairs.append(int(r[-2] + r[-1]))
+    return pairs
+
+# ================== ANALYSIS ==================
+def analyze_top_3(df):
+    nums = []
+    for p in df["pair"]:
+        nums.extend([p // 10, p % 10])
+
+    counter = Counter(nums)
+    hot = [n for n, _ in counter.most_common(6)]
+
+    pairs = []
+    for i in range(0, 6, 2):
+        pairs.append((hot[i], hot[i+1]))
+    return pairs
+
+def detect_bet(df):
+    recent = df.tail(10)["pair"].tolist()
+    c = Counter(recent)
+    return [k for k, v in c.items() if v >= 3]
+
+# ================== UI ==================
+st.markdown("<div class='big-title'>🎯 LOTOBET AI – 2 SỐ 5 TINH</div>", unsafe_allow_html=True)
+
+# -------- INPUT TEXT --------
+with st.expander("📥 NẠP DỮ LIỆU TEXT"):
+    raw = st.text_area("Dán kết quả 5 tinh (mỗi dòng 1 kỳ)", height=120)
+    if st.button("🚀 NẠP TEXT"):
         digits = re.findall(r"\d", raw)
         rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-        rows = [list(map(int, r)) for r in rows if len(r) == 5]
-        if rows:
-            save_history(rows)
-            st.session_state.history.extend(rows)
-            st.success(f"Đã nạp {len(rows)} kỳ (lưu vĩnh viễn)")
-            st.rerun()
+        pairs = [int(r[-2] + r[-1]) for r in rows if len(r) == 5]
+        if pairs:
+            save_data(pairs)
+            st.success(f"Đã nạp {len(pairs)} kỳ")
+
+# -------- INPUT IMAGE --------
+with st.expander("📷 NẠP DỮ LIỆU HÌNH ẢNH"):
+    img = st.file_uploader("Upload ảnh Lotobet", type=["png","jpg","jpeg"])
+    if img:
+        image = Image.open(img)
+        pairs = ocr_2so_5tinh(image)
+        if pairs:
+            save_data(pairs)
+            st.success(f"Đã quét {len(pairs)} kỳ từ ảnh")
         else:
-            st.warning("Không có dữ liệu hợp lệ")
+            st.error("Không nhận diện được ảnh")
 
-# ================== CORE LOGIC ==================
-def analyze_2_tinh(history):
-    if len(history) < 15:
-        return None
+# -------- DATA INFO --------
+df_all = load_csv(ALL_DATA)
+df_new = load_csv(NEW_DATA)
 
-    # --- ĐẾM CẶP 2 SỐ ---
-    pair_counter = Counter()
-    for row in history:
-        for a, b in itertools.combinations(set(row), 2):
-            pair_counter[tuple(sorted((a, b)))] += 1
+st.info(f"📊 Tổng dữ liệu: {len(df_all)} kỳ | 🆕 Mới: {len(df_new)}")
 
-    # --- CẦU BỆT ---
-    streak = Counter()
-    last = history[-6:]
-    for i in range(1, len(last)):
-        for n in set(last[i]) & set(last[i-1]):
-            streak[n] += 1
-    bet_nums = {n for n, c in streak.items() if c >= 2}
+# -------- ANALYZE --------
+if st.button("🔮 PHÂN TÍCH KỲ TIẾP"):
+    if len(df_all) < 10:
+        st.warning("Cần ít nhất 10 kỳ dữ liệu")
+    else:
+        bet = detect_bet(df_all)
+        if bet:
+            st.markdown(f"<div class='warn'>🚨 CẦU BỆT: {', '.join(map(str, bet))}</div>", unsafe_allow_html=True)
 
-    # --- CHẤM ĐIỂM CẶP ---
-    scored = []
-    for (a, b), cnt in pair_counter.items():
-        score = cnt
-        if a in bet_nums or b in bet_nums:
-            score += 3   # ưu tiên có số bệt
-        scored.append(((a, b), score))
+        top3 = analyze_top_3(df_all)
 
-    scored.sort(key=lambda x: x[1], reverse=True)
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.subheader("🎯 3 CẶP 2 SỐ 5 TINH MẠNH NHẤT")
+        for a, b in top3:
+            st.markdown(f"<div class='num'>{a} - {b}</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- CHỌN 3 CẶP ÍT TRÙNG ---
-    selected = []
-    used_nums = set()
-
-    for pair, _ in scored:
-        if len(selected) == 3:
-            break
-        if pair[0] not in used_nums or pair[1] not in used_nums:
-            selected.append(pair)
-            used_nums.update(pair)
-
-    return selected, bet_nums
-
-# ================== OUTPUT ==================
-if st.session_state.history:
-    if st.button("🔮 PHÂN TÍCH KỲ TIẾP"):
-        result = analyze_2_tinh(st.session_state.history)
-
-        if not result:
-            st.warning("⚠️ Cần ít nhất 15 kỳ để phân tích chính xác")
-        else:
-            pairs, bet_nums = result
-
-            if bet_nums:
-                st.markdown(
-                    f"<div class='alert'>🚨 CẦU BỆT: {', '.join(map(str, bet_nums))}</div>",
-                    unsafe_allow_html=True
-                )
-
-            st.subheader("🎯 3 CẶP 2 SỐ 5 TINH MẠNH NHẤT")
-
-            for p in pairs:
-                st.markdown(
-                    f"<div class='card'><div class='big'>{p[0]} - {p[1]}</div></div>",
-                    unsafe_allow_html=True
-                )
-
-            st.markdown("---")
-            st.info("💡 Gợi ý: Đánh tối đa 3 cặp / kỳ. Thua 2 kỳ liên tiếp nên dừng.")
-
-st.caption("© LOTOBET AI – Công cụ thống kê, không cam kết trúng")
+st.caption("⚠️ Công cụ thống kê – không đảm bảo trúng. Quản lý vốn là trên hết.")
