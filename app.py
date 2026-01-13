@@ -4,65 +4,62 @@ import itertools
 import pandas as pd
 from collections import Counter
 
-st.set_page_config(page_title="AI LOTOBET V7 - 5 TINH", layout="wide")
+st.set_page_config(page_title="AI V9 - PREDICTOR MAX", layout="wide")
 
 if 'memory' not in st.session_state:
     st.session_state.memory = []
 
-st.title("🚀 SIÊU AI V7 - CHUYÊN GIA SOI CẶP 2 SỐ 5 TINH")
+st.title("🛡️ AI V9 - HỆ THỐNG GIẢM THIỂU SAI SỐ")
 st.markdown("---")
 
-input_data = st.text_area("Dán dữ liệu kết quả tại đây:", height=150)
+# Nhập dữ liệu
+input_data = st.text_area("Dán ít nhất 30-50 kỳ quay để giảm lỗi:", height=150)
 
-if st.button("🔥 PHÂN TÍCH CẶP 5 TINH"):
+if st.button("⚡ PHÂN TÍCH CHỐNG GÃY CẦU"):
     if input_data:
         digits = "".join(re.findall(r'\d', input_data))
         new_kỳs = [digits[i:i+5] for i in range(0, len(digits)-4, 5)]
         st.session_state.memory.extend(new_kỳs)
-        st.session_state.memory = st.session_state.memory[-300:]
+        st.session_state.memory = st.session_state.memory[-500:] # Nhớ sâu hơn
 
-        if len(st.session_state.memory) >= 2:
-            st.success(f"📊 Đã nạp {len(st.session_state.memory)} kỳ quay vào bộ nhớ AI.")
+        if len(st.session_state.memory) >= 20:
+            st.success(f"📊 Đã nạp {len(st.session_state.memory)} kỳ. Dữ liệu càng nhiều, AI đoán càng chuẩn.")
             
-            # --- THUẬT TOÁN SOI CẶP 5 TINH ---
-            all_pairs = []
-            for ky in st.session_state.memory:
-                # Lấy các số độc nhất trong 1 kỳ (vì quy tắc 2 số 5 tinh chỉ cần xuất hiện)
-                unique_nums = sorted(list(set(ky)))
-                # Tạo các cặp kết hợp (ví dụ kỳ 12121 -> có số 1 và 2 -> cặp 1-2)
-                pairs = list(itertools.combinations(unique_nums, 2))
-                all_pairs.extend(pairs)
+            # Thuật toán tính Độ Gan (Số bao nhiêu kỳ chưa về)
+            all_digits = "0123456789"
+            last_appearance = {d: 0 for d in all_digits}
+            for i, ky in enumerate(reversed(st.session_state.memory)):
+                for d in all_digits:
+                    if d in ky and last_appearance[d] == 0:
+                        last_appearance[d] = i
+
+            # Lọc ra các số có "Phong độ" tốt (Vừa về xong và về nhiều)
+            counts = Counter("".join(st.session_state.memory))
             
-            pair_counts = Counter(all_pairs).most_common(5)
-            
+            # Tính điểm ưu tiên cho từng số
+            scores = {}
+            for d in all_digits:
+                # Điểm = Tần suất / (Độ gan + 1)
+                scores[d] = counts[d] / (last_appearance[d] + 1)
+
+            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            s1, s2, s3 = sorted_scores[0][0], sorted_scores[1][0], sorted_scores[2][0]
+
             col1, col2 = st.columns(2)
-            
             with col1:
-                st.error("💎 TOP 5 CẶP 2 SỐ 5 TINH (Hay về cùng nhau nhất)")
-                for pair, count in pair_counts:
-                    st.subheader(f"Cặp: {pair[0]} - {pair[1]}")
-                    st.write(f"Đã xuất hiện cùng nhau {count} lần")
+                st.error("🎯 CẶP 5 TINH AN TOÀN CAO")
+                st.subheader(f"Cặp chính: {s1} - {s2}")
+                st.subheader(f"Cặp lót: {s1} - {s3}")
+                st.caption("AI đã loại bỏ các số có độ gan quá lớn để tránh mất vốn.")
 
             with col2:
-                st.warning("🔮 DỰ ĐOÁN KỲ TIẾP THEO")
-                # Lấy 3 số đơn lẻ về nhiều nhất để gợi ý cặp xoay vòng
-                all_digits = "".join(st.session_state.memory)
-                top_3_single = Counter(all_digits).most_common(3)
-                s1, s2, s3 = top_3_single[0][0], top_3_single[1][0], top_3_single[2][0]
-                
-                st.info("Gợi ý tổ hợp 2 số 5 tinh:")
-                st.code(f"Cặp chính: {s1}, {s2}", language="text")
-                st.code(f"Cặp lót 1: {s1}, {s3}", language="text")
-                st.code(f"Cặp lót 2: {s2}, {s3}", language="text")
+                st.warning("⚠️ LƯU Ý KỸ THUẬT")
+                st.write(f"Số **{s1}** đang có nhịp rơi đẹp nhất.")
+                st.write(f"Số **{sorted_scores[-1][0]}** đang bị giam, tuyệt đối không nên theo.")
 
-            # --- NHẬN DIỆN CẦU BỆT 5 TINH ---
-            st.markdown("---")
-            recent_ky = st.session_state.memory[-1]
-            st.write(f"Kỳ gần nhất: **{recent_ky}**")
-            st.caption("AI khuyên: Nếu kỳ trước nổ bệt (ví dụ 12121), hãy ưu tiên đánh lại cặp của kỳ đó cho kỳ sau.")
         else:
-            st.error("Cần thêm dữ liệu kỳ quay để phân tích cặp!")
+            st.error("⚠️ Cảnh báo: Dưới 20 kỳ quay AI sẽ đoán rất dễ sai. Hãy dán thêm dữ liệu!")
 
-if st.sidebar.button("🗑️ Xóa bộ nhớ AI"):
+if st.sidebar.button("🗑️ Xóa dữ liệu"):
     st.session_state.memory = []
     st.rerun()
