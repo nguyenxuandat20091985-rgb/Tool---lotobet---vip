@@ -1,100 +1,147 @@
 import streamlit as st
 import pandas as pd
-import re
-from collections import Counter
-from datetime import datetime
+import numpy as np
+import plotly.express as px
+import cv2
+import pytesseract
+from PIL import Image
 import os
+from datetime import datetime
 
-st.set_page_config(page_title="LOTOBET AUTO PRO – CẤP 1", layout="centered")
+# --- CẤU HÌNH HỆ THỐNG ---
+st.set_page_config(page_title="LOTOBET V3 PRO - ALL IN ONE", layout="wide")
+DATA_FILE = "loto_data.csv"
+PREDICT_FILE = "predict_history.csv"
 
-DATA_FILE = "data.csv"
-LOG_FILE = "predict_log.csv"
+# Khởi tạo file dữ liệu nếu chưa có
+for f in [DATA_FILE, PREDICT_FILE]:
+    if not os.path.exists(f):
+        pd.DataFrame().to_csv(f, index=False)
 
-# ---------- LOAD / SAVE ----------
-def load_csv(path, cols):
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=cols)
+# --- 1. MODULE MẮT THẦN (OCR) ---
+def process_image(image_bytes):
+    """Quét ảnh từ Screenshot để lấy dãy 5 số"""
+    try:
+        # Chuyển bytes ảnh sang định dạng OpenCV
+        file_bytes = np.asarray(bytearray(image_bytes), dtype=np.uint8)
+        img = cv2.imdecode(file_bytes, 1)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Tiền xử lý để đọc số chính xác hơn (Thresholding)
+        thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)[1]
+        
+        # Cấu hình OCR chỉ đọc số
+        custom_config = r'--oem 3 --psm 6 outputbase digits'
+        text = pytesseract.image_to_string(thresh, config=custom_config)
+        
+        # Lọc các dãy 5 số (5 tinh)
+        numbers = [n for n in text.split() if len(n) == 5]
+        return numbers
+    except Exception as e:
+        st.error(f"Lỗi OCR: {e}")
+        return []
 
-def save_pairs(pairs):
-    df = load_csv(DATA_FILE, ["time", "pair"])
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    df_new = pd.DataFrame(
-        [{"time": now, "pair": p} for p in pairs]
-    )
-    df = pd.concat([df, df_new], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
-
-def log_prediction(pairs, advice):
-    df = load_csv(LOG_FILE, ["time", "pairs", "advice"])
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    df.loc[len(df)] = [now, ",".join(map(str, pairs)), advice]
-    df.to_csv(LOG_FILE, index=False)
-
-# ---------- ANALYSIS ----------
-def analyze(df):
-    total = len(df)
-    last10 = df.tail(10)["pair"].tolist()
-
-    counter_total = Counter(df["pair"])
-    counter_10 = Counter(last10)
-
-    results = []
-
-    for pair, cnt10 in counter_10.items():
-        p_recent = cnt10 / 10
-        p_total = counter_total[pair] / total
-        score = round((p_recent * 0.6 + p_total * 0.4) * 100, 2)
-
-        results.append({
-            "pair": pair,
-            "10_kỳ": cnt10,
-            "tổng": counter_total[pair],
-            "score_%": score
+# --- 2. MODULE BỘ NÃO (ANALYZER) ---
+def analyze_logic(df):
+    """Phân tích nhịp rơi và cầu bệt theo biểu đồ"""
+    if df.empty or len(df) < 5:
+        return pd.DataFrame()
+    
+    stats = []
+    total_len = len(df)
+    
+    for n in range(10):
+        target = str(n)
+        # Tìm các kỳ số n xuất hiện trong chuỗi 5 số
+        indices = df.index[df['numbers'].astype(str).str.contains(target)].tolist()
+        
+        if not indices:
+            stats.append({"Số": n, "Nhịp Hiện Tại": total_len, "Điểm": 0, "Trạng Thái": "Đang Gan"})
+            continue
+            
+        # Tính khoảng cách (Gap)
+        gaps = [indices[i] - indices[i-1] for i in range(1, len(indices))]
+        current_gap = (total_len - 1) - indices[-1]
+        avg_gap = sum(gaps) / len(gaps) if gaps else 5
+        
+        # Tính điểm tin cậy (Kết hợp nhịp rơi và tần suất)
+        # Nếu nhịp hiện tại gần bằng nhịp trung bình -> Điểm cao
+        gap_score = max(0, 100 - abs(current_gap - avg_gap) * 15)
+        freq_score = (len(indices) / total_len) * 100
+        
+        final_score = (gap_score * 0.7) + (freq_score * 0.3)
+        
+        stats.append({
+            "Số": n,
+            "Nhịp TB": round(avg_gap, 1),
+            "Nhịp Hiện Tại": current_gap,
+            "Điểm Tin Cậy": round(final_score, 2),
+            "Trạng Thái": "🔥 Vào Nhịp" if current_gap >= avg_gap - 1 else "Chờ"
         })
+    
+    return pd.DataFrame(stats).sort_values("Điểm Tin Cậy", ascending=False)
 
-    return sorted(results, key=lambda x: x["score_%"], reverse=True)
+# --- 3. GIAO DIỆN (UI/UX) ---
+st.title("🛡️ LOTOBET HYBRID V3 - TRỢ LÝ DỮ LIỆU CHUYÊN NGHIỆP")
+st.markdown("---")
 
-# ---------- UI ----------
-st.title("🟢 LOTOBET AUTO PRO – CẤP 1")
+col_input, col_view = st.columns([1, 2])
 
-raw = st.text_area("📥 Dán kết quả 5 tinh", height=120)
+with col_input:
+    st.subheader("📥 Nhập liệu thông minh")
+    tab1, tab2 = st.tabs(["Quét Ảnh (OCR)", "Nhập Tay"])
+    
+    with tab1:
+        up_img = st.file_uploader("Upload ảnh kết quả", type=['jpg', 'png'])
+        if up_img:
+            extracted = process_image(up_img.read())
+            if extracted:
+                st.success(f"Tìm thấy: {extracted}")
+                if st.button("Lưu vào Data"):
+                    new_data = pd.DataFrame({"time": [datetime.now()], "numbers": [",".join(extracted)]})
+                    new_data.to_csv(DATA_FILE, mode='a', header=not os.path.exists(DATA_FILE), index=False)
+                    st.rerun()
 
-if st.button("💾 LƯU KỲ MỚI"):
-    digits = re.findall(r"\d", raw)
-    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-    pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
+    with tab2:
+        manual_input = st.text_input("Nhập dãy 5 số (VD: 57221)")
+        if st.button("Thêm thủ công"):
+            if len(manual_input) == 5:
+                new_data = pd.DataFrame({"time": [datetime.now()], "numbers": [manual_input]})
+                new_data.to_csv(DATA_FILE, mode='a', header=False, index=False)
+                st.success("Đã thêm!")
+            else: st.error("Phải đủ 5 số!")
 
-    if pairs:
-        save_pairs(pairs)
-        st.success(f"Đã lưu {len(pairs)} kỳ")
-    else:
-        st.error("Không nhận diện được dữ liệu")
+# --- 4. HIỂN THỊ KẾT QUẢ PHÂN TÍCH ---
+df_main = pd.read_csv(DATA_FILE)
+if not df_main.empty:
+    analysis_res = analyze_logic(df_main)
+    
+    with col_view:
+        st.subheader("📊 Biểu đồ Nhịp rơi & Độ nóng")
+        fig = px.bar(analysis_res, x='Số', y='Điểm Tin Cậy', color='Điểm Tin Cậy', 
+                     color_continuous_scale='Turbo', text='Điểm Tin Cậy')
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Gợi ý dàn số dựa trên điểm cao nhất
+        top_3 = analysis_res.head(3)['Số'].tolist()
+        st.warning(f"💡 GỢI Ý DÀN (2 số 5 tinh): **{top_3}** | Tỷ lệ đề xuất: **6.61**")
 
-df = load_csv(DATA_FILE, ["time", "pair"])
-st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
+    st.divider()
+    
+    # Bảng chi tiết
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("📋 Chi tiết thông số")
+        st.dataframe(analysis_res, use_container_width=True)
+    with c2:
+        st.subheader("🕒 Lịch sử kỳ gần nhất")
+        st.table(df_main.tail(5))
 
-if len(df) >= 20:
-    analysis = analyze(df)
+else:
+    st.info("Chưa có dữ liệu. Vui lòng upload ảnh hoặc nhập tay để bắt đầu phân tích.")
 
-    st.subheader("📊 PHÂN TÍCH CẶP SỐ (TOP 5)")
-    st.table(analysis[:5])
-
-    best = analysis[0]
-    advice = "🟢 NÊN ĐÁNH" if best["10_kỳ"] >= 3 else "🟡 CÂN NHẮC"
-
-    st.subheader("🚦 KHUYẾN NGHỊ")
-    st.markdown(f"""
-    **Cặp đề xuất:** `{best['pair']}`  
-    **Xác suất tương đối:** `{best['score_%']}%`  
-    **Khuyến nghị:** {advice}
-    """)
-
-    if st.button("📌 LƯU DỰ ĐOÁN KỲ NÀY"):
-        log_prediction([best["pair"]], advice)
-        st.success("Đã lưu dự đoán")
-
-st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
-log_df = load_csv(LOG_FILE, ["time", "pairs", "advice"])
-if not log_df.empty:
-    st.table(log_df.tail(10))
+# --- QUẢN LÝ VỐN ---
+st.sidebar.header("💰 Quản lý vốn")
+balance = st.sidebar.number_input("Số dư hiện tại", value=1000)
+bet_unit = st.sidebar.number_input("Tiền cược 1 đơn", value=10)
+st.sidebar.info(f"Khuyến nghị cược: {round(balance * 0.02)} - {round(balance * 0.05)} (2-5% vốn)")
