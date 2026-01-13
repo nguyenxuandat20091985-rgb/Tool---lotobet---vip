@@ -1,159 +1,114 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import os
 import re
-from datetime import datetime
 from collections import Counter
-import plotly.express as px
+from datetime import datetime
+import os
 
-# ================== CONFIG ==================
-st.set_page_config(page_title="LOTObet V9", layout="wide")
-DATA_FILE = "lotobet_data.csv"
-PREDICT_FILE = "predict_history.csv"
+st.set_page_config(page_title="LOTOBET AUTO PRO – CẤP 1 (V9.2)", layout="centered")
 
-# ================== INIT ==================
-if not os.path.exists(DATA_FILE):
-    pd.DataFrame(columns=["time", "result"]).to_csv(DATA_FILE, index=False)
+DATA_FILE = "data.csv"
+LOG_FILE = "predict_log.csv"
 
-if not os.path.exists(PREDICT_FILE):
-    pd.DataFrame(columns=["time", "pairs", "advice"]).to_csv(PREDICT_FILE, index=False)
+# ---------- LOAD / INIT ----------
+def load_csv(path, cols):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    df = pd.DataFrame(columns=cols)
+    df.to_csv(path, index=False)
+    return df
 
-# ================== CORE ANALYSIS ==================
-def analyze_digits(df):
+# ---------- SAVE DATA ----------
+def save_pairs(pairs):
+    df = load_csv(DATA_FILE, ["time", "pair"])
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for p in pairs:
+        df.loc[len(df)] = [now, p]
+    df.to_csv(DATA_FILE, index=False)
+
+def log_prediction(pair, advice, score):
+    df = load_csv(LOG_FILE, ["time", "pair", "score", "advice"])
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df.loc[len(df)] = [now, pair, score, advice]
+    df.to_csv(LOG_FILE, index=False)
+
+# ---------- ANALYSIS ----------
+def analyze(df):
     total = len(df)
-    rows = []
+    counter = Counter(df["pair"])
+    results = []
 
-    for d in range(10):
-        digit = str(d)
-        idx = df[df["result"].str.contains(digit)].index.tolist()
+    for pair, cnt in counter.items():
+        # gap
+        last_idx = df[df["pair"] == pair].index
+        gap = total - 1 - last_idx[-1] if len(last_idx) > 0 else total
 
-        if not idx:
-            gap = total
-            streak = 0
-        else:
-            gap = total - 1 - idx[-1]
-            streak = 1
-            for i in range(len(idx)-1, 0, -1):
-                if idx[i] - idx[i-1] == 1:
-                    streak += 1
-                else:
-                    break
+        freq = cnt / total
+        score = round((freq * 100) - gap * 1.5, 2)
 
-        score = max(0, 100 - gap * 10 - streak * 8)
-
-        rows.append({
-            "Số": d,
-            "Gap": gap,
-            "Bệt": streak,
-            "Điểm": round(score, 2),
-            "Cảnh báo": "⚠️ Bệt sâu" if streak >= 3 else ""
+        results.append({
+            "pair": pair,
+            "số_lần": cnt,
+            "gap": gap,
+            "tần_suất_%": round(freq * 100, 2),
+            "score_%": score
         })
 
-    return pd.DataFrame(rows).sort_values("Điểm", ascending=False)
+    results = [r for r in results if r["score_%"] > 0]
+    return sorted(results, key=lambda x: x["score_%"], reverse=True)
 
-def analyze_pairs(df):
-    pairs = []
-    for r in df["result"]:
-        u = list(set(r))
-        for i in range(len(u)):
-            for j in range(i+1, len(u)):
-                pairs.append("".join(sorted([u[i], u[j]])))
+# ---------- UI ----------
+st.title("🤖 LOTOBET AUTO PRO – CẤP 1 (V9.2)")
+st.caption("Phân tích an toàn • Không ép đánh • Có quyền nghỉ")
 
-    c = Counter(pairs)
-    total = sum(c.values())
+raw = st.text_area("📥 Dán kết quả 5 tinh (VD: 57221)", height=120)
 
-    data = []
-    for k, v in c.most_common(10):
-        data.append({
-            "Cặp": k,
-            "Số lần": v,
-            "Tỷ lệ %": round(v / total * 100, 2)
-        })
+if st.button("💾 LƯU KỲ MỚI"):
+    digits = re.findall(r"\d", raw)
+    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
+    pairs = [int(r[-2] + r[-1]) for r in rows if len(r) == 5]
 
-    return pd.DataFrame(data)
-
-def assistant_advice(df, ana):
-    if len(df) < 20:
-        return "🛑 Dữ liệu ít – KHÔNG NÊN ĐÁNH"
-
-    if ana["Bệt"].max() >= 4:
-        return "⚠️ Cầu bệt sâu – NÊN NGHỈ, tránh đuổi"
-
-    return "✅ Cầu ổn – Đánh nhỏ, 1 tay"
-
-# ================== UI ==================
-st.title("🤖 LOTOBET V9 – TRỢ LÝ KIẾM TIỀN AN TOÀN")
-st.caption("Không đuổi cầu • Không all-in • Ưu tiên sống sót")
-
-col1, col2 = st.columns([1, 2])
-
-# ================== INPUT ==================
-with col1:
-    st.subheader("📥 Nhập kết quả 5 tinh")
-    raw = st.text_input("Ví dụ: 57221")
-    raw = re.sub(r"\D", "", raw)
-
-    if st.button("💾 Lưu kỳ"):
-        if len(raw) == 5:
-            pd.DataFrame([{
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "result": raw
-            }]).to_csv(DATA_FILE, mode="a", header=False, index=False)
-            st.success(f"Đã lưu: {raw}")
-            st.rerun()
-        else:
-            st.error("❌ Cần đúng 5 chữ số")
-
-    st.info("🎯 Luật: Chọn 2 số – xuất hiện trong 5 tinh là thắng")
-
-# ================== ANALYSIS ==================
-with col2:
-    df = pd.read_csv(DATA_FILE)
-
-    if df.empty:
-        st.warning("Chưa có dữ liệu")
+    if pairs:
+        save_pairs(pairs)
+        st.success(f"Đã lưu {len(pairs)} kỳ")
+        st.rerun()
     else:
-        ana = analyze_digits(df)
-        pair_df = analyze_pairs(df)
-        advice = assistant_advice(df, ana)
+        st.error("❌ Cần đúng định dạng 5 chữ số")
 
-        st.subheader("📊 Phân tích số (Cầu bệt – Gap)")
-        fig = px.bar(
-            ana,
-            x="Số",
-            y="Điểm",
-            color="Bệt",
-            text="Cảnh báo",
-            color_continuous_scale="Turbo"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+df = load_csv(DATA_FILE, ["time", "pair"])
+st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-        st.subheader("🧮 Cặp 2 số tiềm năng")
-        st.dataframe(pair_df, use_container_width=True)
+# ---------- RESULT ----------
+if len(df) >= 20:
+    analysis = analyze(df)
 
-        # GỢI Ý
-        top = ana[ana["Bệt"] < 3].head(4)["Số"].astype(str).tolist()
-        if len(top) >= 4:
-            pairs = [top[0]+top[1], top[2]+top[3]]
+    if analysis:
+        st.subheader("📊 TOP 5 CẶP TIỀM NĂNG")
+        st.table(analysis[:5])
+
+        best = analysis[0]
+
+        if best["gap"] <= 1:
+            advice = "🛑 CẦU NÓNG – NÊN NGHỈ"
+        elif best["score_%"] < 5:
+            advice = "🟡 KHÔNG RÕ RÀNG"
         else:
-            pairs = []
+            advice = "🟢 CÓ THỂ ĐÁNH NHỎ"
 
-        st.success(f"🎯 Gợi ý: {pairs if pairs else 'KHÔNG CHỐT'}")
-        st.warning(f"🤖 Trợ lý: {advice}")
+        st.subheader("🚦 KHUYẾN NGHỊ")
+        st.markdown(f"""
+        **Cặp đề xuất:** `{best['pair']}`  
+        **Score:** `{best['score_%']}%`  
+        **Gap:** `{best['gap']}`  
+        **Khuyến nghị:** **{advice}**
+        """)
 
-        pd.DataFrame([{
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "pairs": ", ".join(pairs),
-            "advice": advice
-        }]).to_csv(PREDICT_FILE, mode="a", header=False, index=False)
+        if st.button("📌 LƯU DỰ ĐOÁN"):
+            log_prediction(best["pair"], advice, best["score_%"])
+            st.success("Đã lưu dự đoán")
 
-# ================== HISTORY ==================
-st.subheader("🕒 10 kỳ gần nhất")
-if not df.empty:
-    st.dataframe(df.tail(10), use_container_width=True)
-
-st.subheader("📌 Nhật ký trợ lý")
-pred = pd.read_csv(PREDICT_FILE)
-if not pred.empty:
-    st.dataframe(pred.tail(10), use_container_width=True)
+# ---------- LOG ----------
+st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
+log_df = load_csv(LOG_FILE, ["time", "pair", "score", "advice"])
+if not log_df.empty:
+    st.table(log_df.tail(10))
