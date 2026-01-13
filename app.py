@@ -5,211 +5,156 @@ from collections import Counter
 from datetime import datetime
 import os
 
-# ==================================================
-# CONFIG
-# ==================================================
+# ================== CONFIG ==================
 st.set_page_config(
-    page_title="LOTOBET AUTO PRO – FINAL",
-    page_icon="🎯",
-    layout="centered"
+    page_title="LOTOBET AUTO PRO – V3 KU",
+    layout="wide",
+    page_icon="🎯"
 )
 
 DATA_FILE = "data.csv"
-LOG_FILE = "predict_log.csv"
 AI_FILE = "ai_weight.csv"
 
-# ==================================================
-# CORE UTILITIES
-# ==================================================
+# ================== UTIL ==================
 def load_csv(path, cols):
     if os.path.exists(path):
         return pd.read_csv(path)
     return pd.DataFrame(columns=cols)
 
-def save_pairs(pairs):
-    df = load_csv(DATA_FILE, ["time", "pair"])
+def save_results(results):
+    df = load_csv(DATA_FILE, ["time", "number"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new = pd.DataFrame([{"time": now, "pair": p} for p in pairs])
+    new = pd.DataFrame([{"time": now, "number": n} for n in results])
     df = pd.concat([df, new], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-def log_prediction(pair, score, rate, advice):
-    df = load_csv(LOG_FILE, ["time", "pair", "score", "rate", "advice"])
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    df.loc[len(df)] = [now, pair, score, rate, advice]
-    df.to_csv(LOG_FILE, index=False)
-
-# ==================================================
-# AI WEIGHT
-# ==================================================
 def load_ai():
-    return load_csv(AI_FILE, ["pair", "weight"])
+    return load_csv(AI_FILE, ["key", "weight"])
 
-def update_ai(pair, win):
+def update_ai(key, win):
     ai = load_ai()
-    if pair not in ai["pair"].values:
-        ai.loc[len(ai)] = [pair, 1.0]
-    idx = ai[ai["pair"] == pair].index[0]
-    ai.loc[idx, "weight"] += 0.2 if win else -0.1
+    if key not in ai["key"].values:
+        ai.loc[len(ai)] = [key, 1.0]
+
+    idx = ai[ai["key"] == key].index[0]
+    ai.loc[idx, "weight"] += 0.25 if win else -0.15
     ai.loc[idx, "weight"] = max(0.2, ai.loc[idx, "weight"])
     ai.to_csv(AI_FILE, index=False)
 
-# ==================================================
-# ANALYSIS ENGINE
-# ==================================================
-def analyze_pairs(df):
-    total = len(df)
-    last10 = df.tail(10)["pair"].tolist()
-    last20 = df.tail(20)["pair"].tolist()
+# ================== CHECK WIN ==================
+def check_non_fixed(selected, result):
+    digits = set(map(int, str(result).zfill(5)))
+    return set(selected).issubset(digits)
 
-    cnt_all = Counter(df["pair"])
-    cnt10 = Counter(last10)
-    cnt20 = Counter(last20)
+# ================== ANALYSIS CORE ==================
+def analyze_numbers(df):
+    numbers = df["number"].astype(str).str.zfill(5)
 
-    ai = load_ai()
-    ai_map = dict(zip(ai["pair"], ai["weight"]))
+    digit_counter = Counter()
+    pair_counter = Counter()
 
-    results = []
-    for pair in cnt_all:
-        base = (
-            cnt10[pair]/10 * 0.5 +
-            cnt20[pair]/20 * 0.3 +
-            cnt_all[pair]/total * 0.2
-        )
-        score = round(base * ai_map.get(pair, 1.0) * 100, 2)
+    for n in numbers:
+        ds = list(map(int, n))
+        digit_counter.update(ds)
+        pair_counter.update([int(n[-2:])])
 
-        if cnt10[pair] >= 3:
-            level = "🔥 HOT"
-            advice = "ĐÁNH CHÍNH"
-        elif cnt10[pair] == 2:
-            level = "🌤 ỔN ĐỊNH"
-            advice = "ĐÁNH PHỤ"
-        elif cnt20[pair] >= 2:
-            level = "🎯 BÙNG LẠI"
-            advice = "GÀI NHẸ"
-        else:
-            level = "❄️ COLD"
-            advice = "BỎ"
+    return digit_counter, pair_counter
 
-        results.append({
-            "pair": pair,
-            "10k": cnt10[pair],
-            "20k": cnt20[pair],
-            "score": score,
-            "level": level,
-            "advice": advice
+def analyze_non_fixed(df, k):
+    freq = Counter()
+    numbers = df["number"].astype(str).str.zfill(5)
+
+    for n in numbers:
+        for d in set(n):
+            freq[d] += 1
+
+    combos = []
+    digits = list(range(10))
+    from itertools import combinations
+
+    for c in combinations(digits, k):
+        hit = 0
+        for n in numbers:
+            if set(map(int, c)).issubset(set(map(int, n))):
+                hit += 1
+        rate = hit / len(numbers) * 100
+        combos.append({
+            "set": c,
+            "hits": hit,
+            "rate": round(rate, 2)
         })
 
-    return sorted(results, key=lambda x: x["score"], reverse=True)
+    return sorted(combos, key=lambda x: x["rate"], reverse=True)
 
-def backtest(df, pair, lookback=30):
-    hits = 0
-    total = min(lookback, len(df)-1)
-    for i in range(total):
-        if df.iloc[-(i+2)]["pair"] == pair:
-            hits += 1
-    rate = round(hits/total*100, 2) if total else 0
-    return rate
+# ================== UI ==================
+st.title("🎯 LOTOBET AUTO PRO – V3 (CHUẨN KU)")
 
-def analyze_digits(df):
-    digits = []
-    for p in df["pair"]:
-        digits.extend([p//10, p%10])
+with st.expander("📥 NHẬP KẾT QUẢ 5 TINH", expanded=True):
+    raw = st.text_area("Dán kết quả (mỗi dòng 1 số 5 tinh)", height=120)
+    if st.button("💾 LƯU DỮ LIỆU"):
+        nums = re.findall(r"\d{5}", raw)
+        if nums:
+            save_results(nums)
+            st.success(f"Đã lưu {len(nums)} kỳ")
+        else:
+            st.error("Không nhận diện được số 5 tinh")
 
-    last10 = df.tail(10)["pair"]
-    last20 = df.tail(20)["pair"]
-
-    def ext(ps):
-        out = []
-        for p in ps:
-            out.extend([p//10, p%10])
-        return out
-
-    cnt_all = Counter(digits)
-    cnt10 = Counter(ext(last10))
-    cnt20 = Counter(ext(last20))
-
-    scores = {}
-    for d in range(10):
-        s = (
-            cnt10[d]/(len(last10)*2) * 0.5 +
-            cnt20[d]/(len(last20)*2) * 0.3 +
-            cnt_all[d]/len(digits) * 0.2
-        )
-        scores[d] = round(s*100, 2)
-
-    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
-
-# ==================================================
-# UI
-# ==================================================
-st.markdown("<h2 style='text-align:center;color:#00ff99'>🎯 LOTOBET AUTO PRO – FINAL</h2>", unsafe_allow_html=True)
-
-raw = st.text_area("📥 Dán kết quả 5 tỉnh", height=120)
-
-if st.button("💾 LƯU KỲ MỚI"):
-    digits = re.findall(r"\d", raw)
-    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-    pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
-    if pairs:
-        save_pairs(pairs)
-        st.success(f"Đã lưu {len(pairs)} kỳ")
-    else:
-        st.error("❌ Không đọc được dữ liệu")
-
-df = load_csv(DATA_FILE, ["time", "pair"])
+df = load_csv(DATA_FILE, ["time", "number"])
 st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-# ==================================================
-# DASHBOARD
-# ==================================================
-if len(df) >= 40:
-    analysis = analyze_pairs(df)
-    top = analysis[0]
-    rate = backtest(df, top["pair"])
+if len(df) < 50:
+    st.warning("Cần tối thiểu 50 kỳ để phân tích mạnh")
+    st.stop()
 
-    st.subheader("🏆 CẶP AI MẠNH NHẤT")
+# ================== TABS ==================
+tab1, tab2, tab3 = st.tabs([
+    "🔢 HÀNG SỐ 5 TINH",
+    "🟢 2 SỐ 5 TINH",
+    "🔥 3 SỐ 5 TINH"
+])
+
+# ================== TAB 1 ==================
+with tab1:
+    st.subheader("📈 Phân tích HÀNG SỐ 5 TINH (2 số cuối)")
+
+    digit_cnt, pair_cnt = analyze_numbers(df)
+    top_pairs = pair_cnt.most_common(10)
+
+    st.table(pd.DataFrame(top_pairs, columns=["Cặp", "Số lần"]))
+
+    best_pair = top_pairs[0][0]
+    st.success(f"🎯 KẾT LUẬN: Ưu tiên đánh cặp **{best_pair}**")
+
+# ================== TAB 2 ==================
+with tab2:
+    st.subheader("🟢 Không cố định – 2 SỐ 5 TINH")
+
+    top2 = analyze_non_fixed(df, 2)[:5]
+    df2 = pd.DataFrame(top2)
+    df2["Bộ số"] = df2["set"].apply(lambda x: "-".join(map(str, x)))
+    st.table(df2[["Bộ số", "hits", "rate"]])
+
+    best2 = top2[0]
     st.success(
-        f"🎯 **{top['pair']}** | Score: **{top['score']}%** | Backtest: **{rate}%**\n\n"
-        f"👉 Khuyến nghị: **{top['advice']}**"
+        f"🎯 KẾT LUẬN: Đánh **2 số {best2['set']}** | "
+        f"Tỉ lệ trúng {best2['rate']}%"
     )
 
-    if st.button("📌 LƯU & AI HỌC"):
-        log_prediction(top["pair"], top["score"], rate, top["advice"])
-        update_ai(top["pair"], win=(rate >= 25))
-        st.success("AI đã cập nhật")
+# ================== TAB 3 ==================
+with tab3:
+    st.subheader("🔥 Không cố định – 3 SỐ 5 TINH")
 
-    st.subheader("🔥 TOP 5 CẶP NÊN ĐÁNH")
-    st.table(pd.DataFrame(analysis[:5]))
+    top3 = analyze_non_fixed(df, 3)[:5]
+    df3 = pd.DataFrame(top3)
+    df3["Bộ số"] = df3["set"].apply(lambda x: "-".join(map(str, x)))
+    st.table(df3[["Bộ số", "hits", "rate"]])
 
-    # ================= DÀN 5 =================
-    st.subheader("🎯 DÀN 5 SỐ TINH NHẤT")
-    dan5 = [x["pair"] for x in analysis[:5]]
-    st.success("👉 " + " – ".join(map(str, dan5)))
+    best3 = top3[0]
+    st.success(
+        f"🎯 KẾT LUẬN: Đánh **3 số {best3['set']}** | "
+        f"Tỉ lệ trúng {best3['rate']}%"
+    )
 
-    # ================= DIGIT =================
-    st.subheader("🔢 3 CHỮ SỐ MẠNH (5 TỈNH)")
-    digits = analyze_digits(df)[:3]
-    st.info(", ".join(f"{d} ({s}%)" for d, s in digits))
-
-    # ================= 5 SỐ KHÔNG CỐ ĐỊNH =================
-    st.subheader("🚀 5 SỐ XÁC SUẤT CAO NHẤT")
-    selected = []
-    for d, _ in digits:
-        for x in analysis[:10]:
-            if str(d) in str(x["pair"]) and x["pair"] not in selected:
-                selected.append(x["pair"])
-            if len(selected) == 5:
-                break
-        if len(selected) == 5:
-            break
-
-    st.success("🎯 " + " – ".join(map(str, selected)))
-
-# ==================================================
-# LOG
-# ==================================================
-st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
-log_df = load_csv(LOG_FILE, ["time", "pair", "score", "rate", "advice"])
-if not log_df.empty:
-    st.table(log_df.tail(10))
+# ================== FOOTER ==================
+st.markdown("---")
+st.caption("🚀 LOTOBET AUTO PRO V3 | Phân tích chuẩn KU | Không đoán mò")
