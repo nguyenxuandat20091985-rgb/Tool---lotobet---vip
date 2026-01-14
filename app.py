@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 
 # ================= CONFIG =================
-st.set_page_config(page_title="LOTOBET AUTO PRO – V3", layout="centered")
+st.set_page_config(page_title="LOTOBET AUTO PRO – V3.5", layout="centered")
 
 DATA_FILE = "data.csv"
 LOG_FILE = "predict_log.csv"
@@ -75,8 +75,6 @@ def analyze_v3(df):
 
         results.append({
             "pair": pair,
-            "10k": cnt10[pair],
-            "20k": cnt20[pair],
             "score": score,
             "status": status,
             "advice": advice
@@ -85,24 +83,23 @@ def analyze_v3(df):
     return sorted(results, key=lambda x: x["score"], reverse=True)
 
 # ================= BACKTEST =================
-def backtest(df, test_pair, lookback=30):
+def backtest(df, pair, lookback=30):
     hits = 0
     total = min(lookback, len(df)-1)
     for i in range(total):
-        if df.iloc[-(i+2)]["pair"] == test_pair:
+        if df.iloc[-(i+2)]["pair"] == pair:
             hits += 1
-    rate = round(hits/total*100, 2) if total else 0
-    return hits, rate
+    return round(hits/total*100, 2) if total else 0
 
 # ================= UI =================
-st.title("🟢 LOTOBET AUTO PRO – V3")
+st.title("🟢 LOTOBET AUTO PRO – V3.5")
 
 raw = st.text_area("📥 Dán kết quả 5 tỉnh", height=120)
 
 if st.button("💾 LƯU KỲ MỚI"):
     digits = re.findall(r"\d", raw)
     rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
-    pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
+    pairs = [f"{r[-2]}{r[-1]}" for r in rows if len(r) == 5]
     if pairs:
         save_pairs(pairs)
         st.success(f"Đã lưu {len(pairs)} kỳ")
@@ -115,40 +112,49 @@ st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 # ================= ANALYZE =================
 if len(df) >= 40:
     analysis = analyze_v3(df)
-    st.subheader("🔥 TOP 5 CẶP AI ĐỀ XUẤT")
-    st.table(analysis[:5])
+
+    st.subheader("🔥 TOP 5 CẶP ĐỀ XUẤT")
+    top_display = []
+    for x in analysis[:5]:
+        rate = backtest(df, x["pair"])
+        top_display.append({
+            "Cặp": x["pair"],
+            "AI %": f"{x['score']}%",
+            "Backtest %": f"{rate}%",
+            "Trạng thái": x["status"]
+        })
+
+    st.table(pd.DataFrame(top_display))
 
     best = analysis[0]
-    hits, rate = backtest(df, best["pair"])
+    rate = backtest(df, best["pair"])
 
     st.subheader("🚦 KẾT LUẬN AI")
+    dau, duoi = best["pair"][0], best["pair"][1]
+    tay_phu = sorted({dau, duoi, str((int(duoi)+3)%10)})[:3]
+
     st.markdown(f"""
-    **Cặp:** `{best['pair']}`  
-    **Score AI:** `{best['score']}%`  
-    **Backtest trúng:** `{rate}%`  
-    **Trạng thái:** {best['status']}  
-    **Khuyến nghị:** {best['advice']}
+    ### 🎯 Cặp chính: **{best['pair']}**
+    - AI Score: **{best['score']}%**
+    - Backtest: **{rate}%**
+    - Trạng thái: **{best['status']}**
+    - Khuyến nghị: **{best['advice']}**
+
+    👉 **Tay phụ nên cân nhắc:** `{", ".join(tay_phu)}`
     """)
 
     if rate >= 25:
-        st.success("✅ Đủ điều kiện xuống tiền")
+        st.success("✅ Đủ điều kiện đánh")
     else:
-        st.warning("⚠️ Độ tin cậy thấp – nên theo dõi")
+        st.warning("⚠️ Nên theo dõi – chưa đẹp")
 
     if st.button("📌 LƯU & HỌC AI"):
         log_prediction(best["pair"], best["score"], best["advice"], best["status"])
         update_ai(best["pair"], win=(rate >= 25))
         st.success("AI đã học xong kỳ này")
 
-# ================= DÀN =================
-st.subheader("🎯 DÀN THÔNG MINH")
-if len(df) >= 40:
-    st.write("Dàn 1:", [x["pair"] for x in analysis[:1]])
-    st.write("Dàn 3:", [x["pair"] for x in analysis[:3]])
-    st.write("Dàn 5:", [x["pair"] for x in analysis[:5]])
-
 # ================= LOG =================
-st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
+st.subheader("🧾 LỊCH SỬ AI")
 log_df = load_csv(LOG_FILE, ["time", "pair", "score", "status", "advice"])
 if not log_df.empty:
     st.table(log_df.tail(10))
