@@ -1,133 +1,154 @@
 import streamlit as st
 import pandas as pd
-import os, re
-from datetime import datetime
+import re
 from collections import Counter
+from datetime import datetime
+import os
 
 # ================= CONFIG =================
-st.set_page_config("LOTOBET TOOL – MULTI LAYER", layout="wide")
-DATA_FILE = "results.csv"
-MIN_DATA = 10
+st.set_page_config(page_title="LOTOBET AUTO PRO – V3", layout="centered")
 
-# ================= DATA LAYER =================
-def init_data():
-    if not os.path.exists(DATA_FILE):
-        pd.DataFrame(columns=["ky","time","result"]).to_csv(DATA_FILE, index=False)
+DATA_FILE = "data.csv"
+LOG_FILE = "predict_log.csv"
+AI_FILE = "ai_weight.csv"
 
-def load_data():
-    init_data()
-    df = pd.read_csv(DATA_FILE)
-    df["ky"] = pd.to_numeric(df["ky"], errors="coerce").fillna(0).astype(int)
-    df["result"] = df["result"].astype(str).str.zfill(5)
-    return df
+# ================= LOAD / SAVE =================
+def load_csv(path, cols):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=cols)
 
-def save_data(nums):
-    df = load_data()
-    ky = df["ky"].max() if not df.empty else 0
+def save_pairs(pairs):
+    df = load_csv(DATA_FILE, ["time", "pair"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    rows = []
-    for n in nums:
-        ky += 1
-        rows.append({"ky": ky, "time": now, "result": n})
-
-    df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+    df_new = pd.DataFrame([{"time": now, "pair": p} for p in pairs])
+    df = pd.concat([df, df_new], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
-    return len(rows)
 
-# ================= ANALYSIS LAYER =================
-def pair_stats(df, n=20):
-    last = df.tail(n)["result"]
-    return Counter([x[-2:] for x in last])
+def log_prediction(pair, score, advice, status):
+    df = load_csv(LOG_FILE, ["time", "pair", "score", "status", "advice"])
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df.loc[len(df)] = [now, pair, score, status, advice]
+    df.to_csv(LOG_FILE, index=False)
 
-def digit_stats(df):
-    return Counter("".join(df["result"]))
+# ================= AI LEARNING =================
+def load_ai():
+    return load_csv(AI_FILE, ["pair", "weight"])
 
-def pair_age(df):
-    age = {}
-    for r in reversed(df["result"]):
-        p = r[-2:]
-        age[p] = age.get(p, 0) + 1
-    return age
+def update_ai(pair, win=True):
+    ai = load_ai()
+    if pair not in ai["pair"].values:
+        ai.loc[len(ai)] = [pair, 1.0]
+    idx = ai[ai["pair"] == pair].index[0]
+    ai.loc[idx, "weight"] += 0.2 if win else -0.1
+    ai.loc[idx, "weight"] = max(0.1, ai.loc[idx, "weight"])
+    ai.to_csv(AI_FILE, index=False)
 
-# ================= FILTER LAYER =================
-def filter_layers(df, pairs):
-    age = pair_age(df)
-    out = []
+# ================= ANALYSIS =================
+def analyze_v3(df):
+    total = len(df)
+    last10 = df.tail(10)["pair"].tolist()
+    last20 = df.tail(20)["pair"].tolist()
 
-    for p in pairs:
-        # TẦNG 1: Tuổi cầu
-        if not (2 <= age.get(p, 0) <= 7):
-            continue
+    cnt_all = Counter(df["pair"])
+    cnt10 = Counter(last10)
+    cnt20 = Counter(last20)
 
-        # TẦNG 2: Không ra quá gần
-        last3 = df.tail(3)["result"]
-        if p in [x[-2:] for x in last3]:
-            continue
+    ai = load_ai()
+    ai_map = dict(zip(ai["pair"], ai["weight"]))
 
-        out.append(p)
+    results = []
+    for pair in cnt_all:
+        base = (cnt10[pair]/10)*0.5 + (cnt20[pair]/20)*0.3 + (cnt_all[pair]/total)*0.2
+        weight = ai_map.get(pair, 1.0)
+        score = round(base * weight * 100, 2)
 
-    return out
+        if cnt10[pair] >= 3:
+            status = "🔥 HOT"
+            advice = "🟢 ĐÁNH MẠNH"
+        elif cnt10[pair] == 2:
+            status = "🌤 WARM"
+            advice = "🟡 ĐÁNH NHẸ"
+        else:
+            status = "❄️ COLD"
+            advice = "🔴 BỎ"
 
-# ================= DECISION LAYER =================
-def decide(df):
-    stats = pair_stats(df)
-    hot = [k for k,v in stats.items() if v >= 2]
+        results.append({
+            "pair": pair,
+            "10k": cnt10[pair],
+            "20k": cnt20[pair],
+            "score": score,
+            "status": status,
+            "advice": advice
+        })
 
-    if not hot:
-        return {"bet":[], "conf":0, "decision":"⛔ KHÔNG CẦU"}
+    return sorted(results, key=lambda x: x["score"], reverse=True)
 
-    filtered = filter_layers(df, hot)
-    if not filtered:
-        return {"bet":[], "conf":0, "decision":"⛔ BỊ LỌC"}
-
-    digits = digit_stats(df)
-    good = [d for d,_ in digits.most_common(5)]
-
-    scored = []
-    for p in filtered:
-        score = 50
-        for d in p:
-            if d in good:
-                score += 10
-        scored.append({"pair":p, "score":score})
-
-    scored = sorted(scored, key=lambda x:x["score"], reverse=True)
-    best = scored[:2]
-    conf = max([x["score"] for x in best])
-
-    return {
-        "bet": best,
-        "conf": min(conf,95),
-        "decision": "✅ ĐÁNH" if conf >= 70 else "⛔ DỪNG"
-    }
+# ================= BACKTEST =================
+def backtest(df, test_pair, lookback=30):
+    hits = 0
+    total = min(lookback, len(df)-1)
+    for i in range(total):
+        if df.iloc[-(i+2)]["pair"] == test_pair:
+            hits += 1
+    rate = round(hits/total*100, 2) if total else 0
+    return hits, rate
 
 # ================= UI =================
-st.title("🎯 TOOL SOI CẦU ĐA TẦNG – BẢN MỚI")
+st.title("🟢 LOTOBET AUTO PRO – V3")
 
-raw = st.text_area("Nhập kết quả (mỗi dòng 1 số 5 chữ số)")
-if st.button("LƯU"):
-    nums = re.findall(r"\d{5}", raw)
-    if nums:
-        st.success(f"Đã lưu {save_data(nums)} kỳ")
-        st.rerun()
+raw = st.text_area("📥 Dán kết quả 5 tỉnh", height=120)
+
+if st.button("💾 LƯU KỲ MỚI"):
+    digits = re.findall(r"\d", raw)
+    rows = [digits[i:i+5] for i in range(0, len(digits), 5)]
+    pairs = [int(r[-2]+r[-1]) for r in rows if len(r)==5]
+    if pairs:
+        save_pairs(pairs)
+        st.success(f"Đã lưu {len(pairs)} kỳ")
     else:
-        st.error("Sai định dạng")
+        st.error("Không nhận diện được dữ liệu")
 
-df = load_data()
-st.subheader("📊 DỮ LIỆU")
-st.dataframe(df.tail(20), use_container_width=True)
+df = load_csv(DATA_FILE, ["time", "pair"])
+st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-if len(df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu")
-    st.stop()
+# ================= ANALYZE =================
+if len(df) >= 40:
+    analysis = analyze_v3(df)
+    st.subheader("🔥 TOP 5 CẶP AI ĐỀ XUẤT")
+    st.table(analysis[:5])
 
-st.divider()
-ai = decide(df)
+    best = analysis[0]
+    hits, rate = backtest(df, best["pair"])
 
-st.subheader("🧠 KẾT LUẬN")
-for x in ai["bet"]:
-    st.write(f"• {x['pair']} | Điểm {x['score']}")
+    st.subheader("🚦 KẾT LUẬN AI")
+    st.markdown(f"""
+    **Cặp:** `{best['pair']}`  
+    **Score AI:** `{best['score']}%`  
+    **Backtest trúng:** `{rate}%`  
+    **Trạng thái:** {best['status']}  
+    **Khuyến nghị:** {best['advice']}
+    """)
 
-st.metric("Độ tin cậy", f"{ai['conf']}%")
-st.markdown(f"### {ai['decision']}")
+    if rate >= 25:
+        st.success("✅ Đủ điều kiện xuống tiền")
+    else:
+        st.warning("⚠️ Độ tin cậy thấp – nên theo dõi")
+
+    if st.button("📌 LƯU & HỌC AI"):
+        log_prediction(best["pair"], best["score"], best["advice"], best["status"])
+        update_ai(best["pair"], win=(rate >= 25))
+        st.success("AI đã học xong kỳ này")
+
+# ================= DÀN =================
+st.subheader("🎯 DÀN THÔNG MINH")
+if len(df) >= 40:
+    st.write("Dàn 1:", [x["pair"] for x in analysis[:1]])
+    st.write("Dàn 3:", [x["pair"] for x in analysis[:3]])
+    st.write("Dàn 5:", [x["pair"] for x in analysis[:5]])
+
+# ================= LOG =================
+st.subheader("🧾 LỊCH SỬ DỰ ĐOÁN")
+log_df = load_csv(LOG_FILE, ["time", "pair", "score", "status", "advice"])
+if not log_df.empty:
+    st.table(log_df.tail(10))
