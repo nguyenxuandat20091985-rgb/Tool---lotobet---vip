@@ -5,216 +5,129 @@ from datetime import datetime
 from collections import Counter
 
 # ================= CONFIG =================
-st.set_page_config(
-    page_title="LOTOBET AUTO PRO – V3",
-    layout="wide",
-    page_icon="🎯"
-)
+st.set_page_config("LOTOBET TOOL – MULTI LAYER", layout="wide")
+DATA_FILE = "results.csv"
+MIN_DATA = 10
 
-RESULT_FILE = "results.csv"
-LOSS_FILE = "ai_loss_memory.csv"
-MIN_DATA = 30
+# ================= DATA LAYER =================
+def init_data():
+    if not os.path.exists(DATA_FILE):
+        pd.DataFrame(columns=["ky","time","result"]).to_csv(DATA_FILE, index=False)
 
-# ================= UTIL =================
-def load_csv(path, cols):
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    return pd.DataFrame(columns=cols)
+def load_data():
+    init_data()
+    df = pd.read_csv(DATA_FILE)
+    df["ky"] = pd.to_numeric(df["ky"], errors="coerce").fillna(0).astype(int)
+    df["result"] = df["result"].astype(str).str.zfill(5)
+    return df
 
-def save_csv(df, path):
-    df.to_csv(path, index=False)
-
-# ================= DATA INPUT =================
-def save_results(results):
-    df = load_csv(RESULT_FILE, ["ky", "time", "result"])
-    last_ky = int(df["ky"].max()) if not df.empty else 0
+def save_data(nums):
+    df = load_data()
+    ky = df["ky"].max() if not df.empty else 0
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     rows = []
-    for r in results:
-        last_ky += 1
-        rows.append({"ky": last_ky, "time": now, "result": r})
+    for n in nums:
+        ky += 1
+        rows.append({"ky": ky, "time": now, "result": n})
 
-    if rows:
-        df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-        save_csv(df, RESULT_FILE)
-
+    df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
     return len(rows)
 
-# ================= CORE ANALYSIS =================
-def ai_analyze_trend(df):
-    last20 = df.tail(20)["result"].astype(str).str.zfill(5)
-    pairs = Counter([x[-2:] for x in last20])
-    bet = [k for k, v in pairs.items() if v >= 3]
-    hot = [k for k, v in pairs.items() if v == 2]
-    return bet, hot
+# ================= ANALYSIS LAYER =================
+def pair_stats(df, n=20):
+    last = df.tail(n)["result"]
+    return Counter([x[-2:] for x in last])
 
-def ai_predict_digits(df):
-    nums = df["result"].astype(str).str.zfill(5)
-    cnt = Counter("".join(nums))
-    return [d for d, _ in cnt.most_common(5)]
+def digit_stats(df):
+    return Counter("".join(df["result"]))
 
-def ai_blacklist_digits(df):
-    last10 = df.tail(10)["result"].astype(str).str.zfill(5)
-    cnt = Counter("".join(last10))
-    return [d for d, v in cnt.items() if v <= 1]
-
-# ================= LOSS MEMORY =================
-def ai_load_loss():
-    if os.path.exists(LOSS_FILE):
-        return pd.read_csv(LOSS_FILE)
-    return pd.DataFrame(columns=["time", "pair"])
-
-def ai_recent_losses():
-    return ai_load_loss().tail(5)["pair"].tolist()
-
-# ================= LAYER FUNCTIONS =================
-def layer_filter_duplicate(df, pairs):
-    last = df.iloc[-1]["result"][-2:]
-    return [p for p in pairs if p != last]
-
-def layer_bet_streak(df, pairs, min_bet=2, max_bet=5):
-    last20 = df.tail(20)["result"].astype(str).str.zfill(5)
-    out = []
-    for p in pairs:
-        c = sum(1 for x in last20 if x[-2:] == p)
-        if min_bet <= c <= max_bet:
-            out.append(p)
-    return out
-
-def layer_cau_age_filter(age_map, pairs, min_age=1, max_age=6):
-    return [p for p in pairs if min_age <= age_map.get(p, 0) <= max_age]
-
-def layer_cold_filter(df, pairs, cold_limit=8):
-    results = df["result"].astype(str).str.zfill(5)
-    out = []
-    for p in pairs:
-        miss = 0
-        for r in reversed(results):
-            if r[-2:] == p:
-                break
-            miss += 1
-        if miss < cold_limit:
-            out.append(p)
-    return out
-
-def layer_return_cycle(df, pairs, min_gap=3, max_gap=8):
-    results = df["result"].astype(str).str.zfill(5)
-    ok = []
-    for p in pairs:
-        pos = [i for i, r in enumerate(results) if r[-2:] == p]
-        if len(pos) >= 3:
-            gaps = [pos[i] - pos[i-1] for i in range(1, len(pos))]
-            avg = sum(gaps[-3:]) / len(gaps[-3:])
-            if min_gap <= avg <= max_gap:
-                ok.append(p)
-    return ok
-
-def layer_rhythm_check(df):
-    last = df.tail(5)["result"].astype(str).str.zfill(5)
-    pairs = [x[-2:] for x in last]
-    return len(set(pairs)) <= 3
-
-def layer_detect_broken(df):
-    last = df.tail(5)["result"].astype(str).str.zfill(5)
-    pairs = [x[-2:] for x in last]
-    return len(set(pairs[-3:])) == 3
-
-# ================= AI V6 =================
-AI6_LOOKBACK = 25
-AI6_MIN_CONF = 75
-AI6_MAX_BET = 2
-
-def ai6_cau_age(df):
-    last = df.tail(AI6_LOOKBACK)["result"].astype(str).str.zfill(5)
-    pairs = [x[-2:] for x in last]
+def pair_age(df):
     age = {}
-    for p in pairs[::-1]:
+    for r in reversed(df["result"]):
+        p = r[-2:]
         age[p] = age.get(p, 0) + 1
     return age
 
-def ai6_predict(df):
-    bet, hot = ai_analyze_trend(df)
-    good_digits = ai_predict_digits(df)
-    bad_digits = ai_blacklist_digits(df)
-    losses = ai_recent_losses()
-    age_map = ai6_cau_age(df)
+# ================= FILTER LAYER =================
+def filter_layers(df, pairs):
+    age = pair_age(df)
+    out = []
 
-    candidates = list(dict.fromkeys(bet + hot))
-    if not candidates:
-        return {"best": [], "confidence": 0, "decision": "⛔ KHÔNG CÓ CẦU", "broken": True}
+    for p in pairs:
+        # TẦNG 1: Tuổi cầu
+        if not (2 <= age.get(p, 0) <= 7):
+            continue
 
-    if not layer_rhythm_check(df):
-        return {"best": [], "confidence": 0, "decision": "⛔ NHỊP XẤU – DỪNG", "broken": True}
+        # TẦNG 2: Không ra quá gần
+        last3 = df.tail(3)["result"]
+        if p in [x[-2:] for x in last3]:
+            continue
 
-    candidates = layer_filter_duplicate(df, candidates)
-    candidates = layer_bet_streak(df, candidates)
-    candidates = layer_cau_age_filter(age_map, candidates)
-    candidates = layer_cold_filter(df, candidates)
-    candidates = layer_return_cycle(df, candidates)
+        out.append(p)
 
-    if not candidates:
-        return {"best": [], "confidence": 0, "decision": "⛔ BỊ LỌC HẾT", "broken": True}
+    return out
 
-    broken = layer_detect_broken(df)
+# ================= DECISION LAYER =================
+def decide(df):
+    stats = pair_stats(df)
+    hot = [k for k,v in stats.items() if v >= 2]
+
+    if not hot:
+        return {"bet":[], "conf":0, "decision":"⛔ KHÔNG CẦU"}
+
+    filtered = filter_layers(df, hot)
+    if not filtered:
+        return {"bet":[], "conf":0, "decision":"⛔ BỊ LỌC"}
+
+    digits = digit_stats(df)
+    good = [d for d,_ in digits.most_common(5)]
 
     scored = []
-    for p in candidates:
+    for p in filtered:
         score = 50
         for d in p:
-            if d in good_digits:
+            if d in good:
                 score += 10
-            if d in bad_digits:
-                score -= 20
-        if p in losses:
-            score -= 35
-        a = age_map.get(p, 1)
-        if a <= 3:
-            score += 15
-        elif a >= 8:
-            score -= 25
-        scored.append({"pair": p, "score": score})
+        scored.append({"pair":p, "score":score})
 
-    scored = sorted(scored, key=lambda x: x["score"], reverse=True)
-    best = scored[:AI6_MAX_BET]
-    conf = max([x["score"] for x in best], default=0)
-    if broken:
-        conf -= 25
+    scored = sorted(scored, key=lambda x:x["score"], reverse=True)
+    best = scored[:2]
+    conf = max([x["score"] for x in best])
 
     return {
-        "best": best,
-        "confidence": max(0, min(conf, 95)),
-        "decision": "✅ ĐÁNH" if conf >= AI6_MIN_CONF and not broken else "⛔ DỪNG",
-        "broken": broken
+        "bet": best,
+        "conf": min(conf,95),
+        "decision": "✅ ĐÁNH" if conf >= 70 else "⛔ DỪNG"
     }
 
 # ================= UI =================
-st.title("🎯 LOTOBET AUTO PRO – V3 (AI V6 FULL TẦNG)")
+st.title("🎯 TOOL SOI CẦU ĐA TẦNG – BẢN MỚI")
 
-raw = st.text_area("📥 Nhập kết quả – mỗi dòng 1 số 5 chữ số")
-if st.button("💾 LƯU"):
+raw = st.text_area("Nhập kết quả (mỗi dòng 1 số 5 chữ số)")
+if st.button("LƯU"):
     nums = re.findall(r"\d{5}", raw)
     if nums:
-        st.success(f"Đã lưu {save_results(nums)} kỳ")
+        st.success(f"Đã lưu {save_data(nums)} kỳ")
+        st.rerun()
     else:
         st.error("Sai định dạng")
 
-df = load_csv(RESULT_FILE, ["ky", "time", "result"])
+df = load_data()
+st.subheader("📊 DỮ LIỆU")
+st.dataframe(df.tail(20), use_container_width=True)
+
 if len(df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để AI hoạt động")
+    st.warning("Chưa đủ dữ liệu")
     st.stop()
 
 st.divider()
-st.subheader("🧠 AI V6 – QUYẾT ĐỊNH CUỐI")
+ai = decide(df)
 
-ai6 = ai6_predict(df)
+st.subheader("🧠 KẾT LUẬN")
+for x in ai["bet"]:
+    st.write(f"• {x['pair']} | Điểm {x['score']}")
 
-if ai6["broken"]:
-    st.error("⚠️ CẦU GÃY – AI CẤM ĐÁNH")
-
-for x in ai6["best"]:
-    st.write(f"• {x['pair']} | Điểm: {x['score']}")
-
-st.metric("📊 ĐỘ TIN CẬY", f"{ai6['confidence']}%")
-st.markdown(f"### 📌 QUYẾT ĐỊNH: **{ai6['decision']}**")
-st.caption("🚀 LOTOBET AUTO PRO V3 – AI V6 | Đánh có kỷ luật – Không đoán mò")
+st.metric("Độ tin cậy", f"{ai['conf']}%")
+st.markdown(f"### {ai['decision']}")
