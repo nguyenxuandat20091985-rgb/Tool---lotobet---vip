@@ -1,26 +1,22 @@
 import streamlit as st
 import pandas as pd
 import re, os
-from collections import Counter
 from datetime import datetime
-import time
+from collections import Counter
 
 # ================= CONFIG =================
 st.set_page_config(
     page_title="LOTOBET AUTO PRO – AI V3.7",
-    page_icon="🎯",
-    layout="centered"
+    layout="centered",
+    page_icon="🎯"
 )
 
-RAW_FILE = "raw_5so.csv"
-PAIR2_FILE = "pair_2tinh.csv"
-PAIR3_FILE = "pair_3tinh.csv"
-MEMORY_FILE = "ai_memory.csv"
-
+DATA_FILE = "data_pair2.csv"
+RESULT_FILE = "result_track.csv"
 MIN_DATA = 40
 
 # ================= UTIL =================
-def load_df(path, cols):
+def load_csv(path, cols):
     if os.path.exists(path):
         df = pd.read_csv(path, dtype=str)
         for c in cols:
@@ -29,190 +25,196 @@ def load_df(path, cols):
         return df[cols]
     return pd.DataFrame(columns=cols)
 
-def next_ky(df):
-    if df.empty:
-        return 1
-    return int(df["ky"].astype(int).max()) + 1
+def save_csv(df, path):
+    df.to_csv(path, index=False)
 
-# ================= SAVE DATA =================
-def save_input(numbers):
-    raw = load_df(RAW_FILE, ["time","ky","number5"])
-    p2  = load_df(PAIR2_FILE, ["time","ky","pair"])
-    p3  = load_df(PAIR3_FILE, ["time","ky","pair"])
-
-    ky = next_ky(raw)
+# ================= SAVE DATA (ANTI DUP) =================
+def save_pairs_unique(pairs):
+    df = load_csv(DATA_FILE, ["time", "pair"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     added = 0
 
-    for num in numbers:
-        if not raw[raw["number5"] == num].empty:
+    for p in pairs:
+        p = str(p).zfill(2)
+        if not df.empty and df.iloc[-1]["pair"] == p:
             continue
-
-        raw.loc[len(raw)] = [now, ky, num]
-
-        pair2 = num[-2:]
-        pair3 = num[-3:]
-
-        if p2.empty or p2.iloc[-1]["pair"] != pair2:
-            p2.loc[len(p2)] = [now, ky, pair2]
-
-        if p3.empty or p3.iloc[-1]["pair"] != pair3:
-            p3.loc[len(p3)] = [now, ky, pair3]
-
-        ky += 1
+        df.loc[len(df)] = [now, p]
         added += 1
 
-    raw.to_csv(RAW_FILE, index=False)
-    p2.to_csv(PAIR2_FILE, index=False)
-    p3.to_csv(PAIR3_FILE, index=False)
+    save_csv(df, DATA_FILE)
     return added
 
-# ================= AI MEMORY =================
-def load_memory():
-    return load_df(MEMORY_FILE, ["pair","hit","miss","score"])
+# ================= RESULT MEMORY =================
+def log_result(pair, hit):
+    df = load_csv(RESULT_FILE, ["time", "pair", "result"])
+    df.loc[len(df)] = [
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        pair,
+        "TRÚNG" if hit else "TRƯỢT"
+    ]
+    save_csv(df, RESULT_FILE)
 
-def update_memory(pair, hit):
-    mem = load_memory()
-    if pair not in mem["pair"].values:
-        mem.loc[len(mem)] = [pair,0,0,50]
+def recent_losses(pair, n=3):
+    df = load_csv(RESULT_FILE, ["time", "pair", "result"])
+    df = df[df["pair"] == pair].tail(n)
+    return (df["result"] == "TRƯỢT").sum()
 
-    idx = mem[mem["pair"] == pair].index[0]
-    if hit:
-        mem.loc[idx,"hit"] = int(mem.loc[idx,"hit"]) + 1
-        mem.loc[idx,"score"] = min(100, int(mem.loc[idx,"score"]) + 5)
-    else:
-        mem.loc[idx,"miss"] = int(mem.loc[idx,"miss"]) + 1
-        mem.loc[idx,"score"] = max(0, int(mem.loc[idx,"score"]) - 7)
+def win_rate(pair, lookback=30):
+    df = load_csv(RESULT_FILE, ["time", "pair", "result"])
+    df = df[df["pair"] == pair].tail(lookback)
+    if df.empty:
+        return 0
+    return round((df["result"] == "TRÚNG").mean() * 100, 2)
 
-    mem.to_csv(MEMORY_FILE, index=False)
-
-# ================= AI CORE =================
-def cycle_eval(seq, pair):
-    pos = [i for i,v in enumerate(seq) if v == pair]
+# ================= CYCLE =================
+def cycle_note(df, pair):
+    seq = df["pair"].tolist()
+    pos = [i for i,p in enumerate(seq) if p == pair]
     if len(pos) < 3:
-        return -10, "Thiếu dữ liệu"
+        return "⏳ Mới"
     gaps = [pos[i]-pos[i-1] for i in range(1,len(pos))]
     avg = sum(gaps[-3:]) / len(gaps[-3:])
-    last = len(seq)-1-pos[-1]
+    last_gap = len(seq) - 1 - pos[-1]
 
-    if abs(last-avg) <= 1:
-        return 20, "🎯 Đúng nhịp"
-    if last < avg:
-        return -10, "⏳ Vừa ra"
-    return -15, "⚠️ Quá hạn"
+    if abs(last_gap - avg) <= 1:
+        return "🔁 Cầu lặp"
+    if last_gap < avg:
+        return "🔥 Nóng"
+    return "⚠️ Gãy"
 
-def analyze(pair_file):
-    df = load_df(pair_file, ["time","ky","pair"])
-    if len(df) < MIN_DATA:
-        return pd.DataFrame()
+# ================= CORE AI =================
+def analyze_ai(df):
+    total = len(df)
+    last10 = df.tail(10)["pair"].tolist()
+    last20 = df.tail(20)["pair"].tolist()
 
-    seq = df["pair"].tolist()
-    cnt10 = Counter(seq[-10:])
-    cnt20 = Counter(seq[-20:])
-    cnt_all = Counter(seq)
-
-    mem = load_memory()
-    mem_map = dict(zip(mem["pair"], mem["score"].astype(int)))
+    cnt_all = Counter(df["pair"])
+    cnt10 = Counter(last10)
+    cnt20 = Counter(last20)
 
     rows = []
-    for p in cnt_all:
-        freq = ((cnt10[p]/10)*0.4 + (cnt20[p]/20)*0.3 + (cnt_all[p]/len(seq))*0.3)*100
-        c_score, note = cycle_eval(seq, p)
-        mem_score = mem_map.get(p, 50)
 
-        total = round(freq + c_score + (mem_score-50)*0.6,2)
+    for pair in cnt_all:
+        freq = (
+            (cnt10[pair]/10)*0.5 +
+            (cnt20[pair]/20)*0.3 +
+            (cnt_all[pair]/total)*0.2
+        ) * 100
 
-        if total <= 0:
+        cycle = cycle_note(df, pair)
+        rate = win_rate(pair)
+
+        score = freq
+
+        # 🔥 HOT / ❄️ BỆT
+        if cnt10[pair] >= 4:
+            score -= 25
+        elif cnt10[pair] == 3:
+            score += 10
+
+        # 🚫 ANTI GỠ
+        loss_streak = recent_losses(pair)
+        if loss_streak >= 2:
+            score -= 30
+
+        score = round(score, 2)
+
+        if score <= 0:
             continue
 
-        decision = "🔴 CẤM ĐÁNH"
-        if total >= 70 and mem_score >= 55:
-            decision = "🟢 NÊN ĐÁNH"
-        elif total >= 50:
-            decision = "🟡 THEO DÕI"
-
         rows.append({
-            "Cặp": p,
-            "Điểm AI (%)": total,
-            "Cầu": note,
-            "Memory": mem_score,
-            "Khuyến nghị": decision
+            "Cặp": pair,
+            "Điểm AI (%)": score,
+            "Cầu": cycle,
+            "Tỷ lệ trúng (%)": rate
         })
 
-    out = pd.DataFrame(rows)
-    return out.sort_values("Điểm AI (%)", ascending=False)
+    if not rows:
+        return pd.DataFrame(columns=["Cặp","Điểm AI (%)","Cầu","Tỷ lệ trúng (%)"])
+
+    df_out = pd.DataFrame(rows)
+    return df_out.sort_values("Điểm AI (%)", ascending=False)
 
 # ================= UI =================
 st.title("🎯 LOTOBET AUTO PRO – AI V3.7")
 
-raw = st.text_area(
-    "📥 Dán kết quả (mỗi dòng 1 số 5 chữ số)",
-    height=120
-)
+raw = st.text_area("📥 Dán kết quả (mỗi dòng 1 số 5 chữ số)", height=120)
 
-if st.button("💾 LƯU & PHÂN TÍCH"):
+if st.button("💾 LƯU KỲ"):
     nums = re.findall(r"\d{5}", raw)
-    if not nums:
-        st.error("Sai định dạng dữ liệu")
+    pairs = [n[-2:] for n in nums]
+    if pairs:
+        added = save_pairs_unique(pairs)
+        st.success(f"Đã lưu {added} kỳ (tự bỏ trùng)")
     else:
-        with st.spinner("⏳ ĐANG PHÂN TÍCH DỮ LIỆU..."):
-            time.sleep(1)
-            added = save_input(nums)
-        st.success(f"Đã lưu {added} kỳ hợp lệ")
+        st.error("Sai định dạng")
 
-raw_df = load_df(RAW_FILE, ["time","ky","number5"])
-st.info(f"📊 Tổng dữ liệu: {len(raw_df)} kỳ")
+df = load_csv(DATA_FILE, ["time","pair"])
+st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
-if len(raw_df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để AI hoạt động")
+if len(df) < MIN_DATA:
+    st.warning("Chưa đủ dữ liệu để AI phân tích")
     st.stop()
 
-# ================= 2 TỈNH =================
 st.divider()
-st.subheader("🔥 TOP 2 TỈNH")
 
-analysis2 = analyze(PAIR2_FILE)
-st.dataframe(analysis2.head(5), use_container_width=True, hide_index=True)
+analysis = analyze_ai(df)
 
-best2 = analysis2.iloc[0]
+if analysis.empty:
+    st.error("🚫 NGÀY XẤU – AI KHÓA ĐÁNH (BẢO VỆ VỐN)")
+    st.stop()
+
+# ================= TOP =================
+st.subheader("🔥 TOP CẶP ĐỀ XUẤT")
+st.dataframe(analysis.head(5), use_container_width=True, hide_index=True)
+
+best = analysis.iloc[0]
+
+# ================= DECISION =================
+st.subheader("🧠 KẾT LUẬN AI")
+
+score = best["Điểm AI (%)"]
+rate = best["Tỷ lệ trúng (%)"]
+
+if score >= 75 and rate >= 30:
+    level = "🟢 ĐÁNH CHÍNH"
+    pick = 1
+elif score >= 60:
+    level = "🟡 ĐÁNH NHẸ"
+    pick = 2
+else:
+    level = "🔴 BỎ – KHÔNG VÀO"
+    pick = 0
+
 st.markdown(f"""
-### 🧠 KẾT LUẬN 2 TỈNH
-- 🎯 **Cặp:** `{best2['Cặp']}`
-- 📊 **Điểm AI:** `{best2['Điểm AI (%)']}%`
-- 🔁 **Cầu:** {best2['Cầu']}
-- 🧠 **Memory:** `{best2['Memory']}`
-- 🚦 **{best2['Khuyến nghị']}**
+### 🎯 Cặp đề xuất: **{best['Cặp']}**
+- 📊 Điểm AI: `{score}%`
+- 🔁 Cầu: {best['Cầu']}
+- ✅ Tỷ lệ trúng: `{rate}%`
+- 🚦 Mức đánh: **{level}**
 """)
 
-# ================= 3 TỈNH =================
+# ================= BOARD =================
+st.subheader("📋 BẢNG SỐ ĐỀ (CO GIÃN)")
+
+if pick == 0:
+    st.warning("🚫 Hôm nay KHÔNG CÓ SỐ AN TOÀN")
+else:
+    st.success(f"🎯 NÊN ĐÁNH {pick} CON:")
+    st.write(list(analysis.head(pick)["Cặp"]))
+
+# ================= RESULT INPUT =================
 st.divider()
-st.subheader("🔥 TOP 3 TỈNH")
-
-analysis3 = analyze(PAIR3_FILE)
-st.dataframe(analysis3.head(5), use_container_width=True, hide_index=True)
-
-best3 = analysis3.iloc[0]
-st.markdown(f"""
-### 🧠 KẾT LUẬN 3 TỈNH
-- 🎯 **Cặp:** `{best3['Cặp']}`
-- 📊 **Điểm AI:** `{best3['Điểm AI (%)']}%`
-- 🔁 **Cầu:** {best3['Cầu']}
-- 🧠 **Memory:** `{best3['Memory']}`
-- 🚦 **{best3['Khuyến nghị']}**
-""")
-
-# ================= MEMORY FEEDBACK =================
-st.divider()
-st.subheader("🧾 GHI NHẬN KẾT QUẢ AI")
+st.subheader("🧾 GHI NHẬN KẾT QUẢ")
 
 c1, c2 = st.columns(2)
 with c1:
-    if st.button("✅ TRÚNG 2 TỈNH"):
-        update_memory(best2["Cặp"], True)
-        st.success("AI đã học (2 tỉnh)")
+    if st.button("✅ TRÚNG"):
+        log_result(best["Cặp"], True)
+        st.success("Đã ghi TRÚNG")
 with c2:
-    if st.button("❌ TRƯỢT 2 TỈNH"):
-        update_memory(best2["Cặp"], False)
-        st.warning("AI đã học (2 tỉnh)")
+    if st.button("❌ TRƯỢT"):
+        log_result(best["Cặp"], False)
+        st.warning("Đã ghi TRƯỢT")
 
-st.caption("⚠️ AI hỗ trợ xác suất – kỷ luật & quản lý vốn là bắt buộc")
+st.caption("⚠️ AI hỗ trợ xác suất – kỷ luật & quản lý vốn quyết định lợi nhuận")
