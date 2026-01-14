@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-import os, re, json
+import os, re
 from datetime import datetime
-from itertools import combinations
 from collections import Counter
 
 # ================= CONFIG =================
@@ -13,12 +12,11 @@ st.set_page_config(
 )
 
 RESULT_FILE = "results.csv"
-SESSION_FILE = "sessions.csv"
-WIN_FILE = "wins.csv"
-STATE_FILE = "state.json"
+ROUND_FILE = "round_state.csv"
+LOSS_FILE = "ai_loss_memory.csv"
 
 MIN_DATA = 30
-BET_THRESHOLD = 5  # số kỳ bệt để canh đánh
+BET_THRESHOLD = 5
 
 # ================= UTIL =================
 def load_csv(path, cols):
@@ -29,32 +27,49 @@ def load_csv(path, cols):
 def save_csv(df, path):
     df.to_csv(path, index=False)
 
-def load_state():
-    if os.path.exists(STATE_FILE):
-        return json.load(open(STATE_FILE, "r"))
-    return {"current_set": [], "type": "", "ky": 0}
+# ================= ROUND STATE =================
+def load_round_state():
+    if os.path.exists(ROUND_FILE):
+        df = pd.read_csv(ROUND_FILE)
+        if not df.empty:
+            return df
+    return pd.DataFrame([{
+        "round_id": 0,
+        "last_number": "",
+        "last_result": "NONE"
+    }])
 
-def save_state(state):
-    json.dump(state, open(STATE_FILE, "w"), indent=2)
+def save_round_state(round_id, last_number, last_result):
+    pd.DataFrame([{
+        "round_id": round_id,
+        "last_number": last_number,
+        "last_result": last_result
+    }]).to_csv(ROUND_FILE, index=False)
+
+def ai_detect_new_round(new_ky):
+    state = load_round_state().iloc[0]
+    if int(new_ky) <= int(state["round_id"]):
+        return False
+    save_round_state(new_ky, "", "WAIT")
+    return True
 
 # ================= DATA INPUT =================
 def save_results(results):
     df = load_csv(RESULT_FILE, ["ky", "time", "result"])
-    last_ky = df["ky"].max() if not df.empty else 0
+    last_ky = int(df["ky"].max()) if not df.empty else 0
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    new_rows = []
+    rows = []
     for r in results:
-        if df.empty or r not in df["result"].values:
-            last_ky += 1
-            new_rows.append({"ky": last_ky, "time": now, "result": r})
+        last_ky += 1
+        rows.append({"ky": last_ky, "time": now, "result": r})
 
-    if new_rows:
-        df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+    if rows:
+        df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
         save_csv(df, RESULT_FILE)
-    return len(new_rows)
+    return len(rows)
 
-# ================= ANALYSIS =================
+# ================= CORE ANALYSIS =================
 def streak_analysis(df):
     results = df["result"].astype(str).str.zfill(5)
     streak = {}
@@ -67,126 +82,130 @@ def streak_analysis(df):
         streak[n] = miss
     return streak
 
-def analyze_pairs(df):
-    pairs = Counter()
-    for r in df["result"]:
-        r = str(r).zfill(5)
-        pairs.update([r[-2:]])
-    return pairs
+def ai_analyze_trend(df):
+    last20 = df.tail(20)["result"].astype(str).str.zfill(5)
+    pairs = Counter([x[-2:] for x in last20])
+    bet = [k for k, v in pairs.items() if v >= 3]
+    hot = [k for k, v in pairs.items() if v == 2]
+    return bet, hot
 
-def analyze_non_fixed(df, k):
-    results = df["result"].astype(str).str.zfill(5)
-    stats = []
+def ai_predict_digits(df):
+    nums = df["result"].astype(str).str.zfill(5)
+    cnt = Counter("".join(nums))
+    return [d for d, _ in cnt.most_common(5)]
 
-    for combo in combinations("0123456789", k):
-        combo = tuple(sorted(combo))
-        hit = sum(1 for r in results if set(combo).issubset(set(r)))
-        rate = round(hit / len(results) * 100, 2)
+def ai_blacklist_digits(df):
+    last10 = df.tail(10)["result"].astype(str).str.zfill(5)
+    cnt = Counter("".join(last10))
+    return [d for d, v in cnt.items() if v <= 1]
 
-        stats.append({
-            "Bộ số": "-".join(combo),
-            "Số lần trúng": hit,
-            "Tỉ lệ %": rate
-        })
+# ================= LOSS MEMORY =================
+def ai_load_loss():
+    if os.path.exists(LOSS_FILE):
+        return pd.read_csv(LOSS_FILE)
+    return pd.DataFrame(columns=["time", "pair"])
 
-    return sorted(stats, key=lambda x: x["Tỉ lệ %"], reverse=True)
+def ai_mark_loss(pair):
+    df = ai_load_loss()
+    df.loc[len(df)] = [
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        pair
+    ]
+    df.to_csv(LOSS_FILE, index=False)
 
-def confidence_score(rate, streaks, combo):
-    nums = combo.split("-")
-    biet = sum(1 for n in nums if streaks[n] >= BET_THRESHOLD)
-    score = rate + biet * 5
-    return min(round(score, 2), 99)
+def ai_recent_losses():
+    return ai_load_loss().tail(5)["pair"].tolist()
+
+# ================= AI V6 =================
+AI6_LOOKBACK = 25
+AI6_MIN_CONF = 75
+AI6_MAX_BET = 2
+
+def ai6_cau_age(df):
+    last = df.tail(AI6_LOOKBACK)["result"].astype(str).str.zfill(5)
+    pairs = [x[-2:] for x in last]
+    age = {}
+    for p in pairs[::-1]:
+        age[p] = age.get(p, 0) + 1
+    return age
+
+def ai6_is_broken(df):
+    last = df.tail(6)["result"].astype(str).str.zfill(5)
+    pairs = [x[-2:] for x in last]
+    return len(set(pairs[-3:])) == 3
+
+def ai6_predict(df):
+    bet, hot = ai_analyze_trend(df)
+    good = ai_predict_digits(df)
+    bad = ai_blacklist_digits(df)
+    losses = ai_recent_losses()
+    age = ai6_cau_age(df)
+
+    candidates = list(dict.fromkeys(bet + hot))
+    scored = []
+
+    for p in candidates:
+        score = 50
+        for d in p:
+            if d in good:
+                score += 10
+            if d in bad:
+                score -= 20
+        if p in losses:
+            score -= 35
+
+        a = age.get(p, 1)
+        if a <= 3:
+            score += 15
+        elif a >= 8:
+            score -= 25
+
+        scored.append({"pair": p, "score": score})
+
+    scored = sorted(scored, key=lambda x: x["score"], reverse=True)
+    broken = ai6_is_broken(df)
+
+    best = scored[:AI6_MAX_BET]
+    conf = max([x["score"] for x in best], default=0)
+    if broken:
+        conf -= 25
+
+    return {
+        "best": best,
+        "confidence": max(0, min(conf, 95)),
+        "decision": "✅ ĐÁNH" if conf >= AI6_MIN_CONF and not broken else "⛔ DỪNG",
+        "broken": broken
+    }
 
 # ================= UI =================
-st.title("🎯 LOTOBET AUTO PRO – V3 (THEO KỲ – THỰC CHIẾN)")
+st.title("🎯 LOTOBET AUTO PRO – V3 (AI V6)")
 
-# ===== INPUT =====
-with st.expander("📥 NHẬP KẾT QUẢ 5 TINH", expanded=True):
-    raw = st.text_area("Mỗi dòng 1 số (VD: 12864)", height=100)
-    if st.button("💾 LƯU KẾT QUẢ"):
-        nums = re.findall(r"\d{5}", raw)
-        if nums:
-            added = save_results(nums)
-            st.success(f"Đã thêm {added} kỳ mới")
-        else:
-            st.error("Dữ liệu không hợp lệ")
+raw = st.text_area("📥 Nhập kết quả – mỗi dòng 1 số 5 chữ số")
+if st.button("💾 LƯU"):
+    nums = re.findall(r"\d{5}", raw)
+    if nums:
+        st.success(f"Đã lưu {save_results(nums)} kỳ")
+    else:
+        st.error("Sai định dạng")
 
 df = load_csv(RESULT_FILE, ["ky", "time", "result"])
-st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
 if len(df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để phân tích")
+    st.warning("Chưa đủ dữ liệu để AI hoạt động")
     st.stop()
 
-# ===== STREAK =====
-st.subheader("🔥 THEO DÕI BỆT SỐ")
-streaks = streak_analysis(df)
-st.table(pd.DataFrame([
-    {
-        "Số": k,
-        "Số kỳ chưa ra": v,
-        "Trạng thái": "🔥 SẮP BẬT" if v >= BET_THRESHOLD else "🟢 BÌNH THƯỜNG"
-    } for k, v in streaks.items()
-]))
+st.divider()
+st.subheader("🧠 AI V6 – QUYẾT ĐỊNH CUỐI")
 
-# ===== TABS =====
-tab1, tab2, tab3 = st.tabs([
-    "🔢 HÀNG SỐ (2 SỐ CUỐI)",
-    "🟢 2 SỐ 5 TINH",
-    "🔥 3 SỐ 5 TINH"
-])
+ai6 = ai6_predict(df)
 
-with tab1:
-    pairs = analyze_pairs(df)
-    top_pairs = pairs.most_common(10)
-    st.table(pd.DataFrame(top_pairs, columns=["Hàng số", "Số lần về"]))
+if ai6["broken"]:
+    st.error("⚠️ CẦU GÃY – AI CẤM ĐÁNH")
 
-with tab2:
-    top2 = analyze_non_fixed(df, 2)[:10]
-    st.table(top2)
+for x in ai6["best"]:
+    st.write(f"• {x['pair']} | Điểm: {x['score']}")
 
-with tab3:
-    top3 = analyze_non_fixed(df, 3)[:10]
-    for x in top3:
-        x["Confidence"] = confidence_score(x["Tỉ lệ %"], streaks, x["Bộ số"])
-    st.table(top3)
+st.metric("📊 ĐỘ TIN CẬY", f"{ai6['confidence']}%")
+st.markdown(f"### 📌 QUYẾT ĐỊNH: **{ai6['decision']}**")
 
-# ===== SUGGEST =====
-st.subheader("🚦 ĐỀ XUẤT KỲ TIẾP THEO (AN TOÀN)")
-safe = [x for x in top3 if x.get("Confidence", 0) >= 70][:3]
-st.table(safe)
-
-state = load_state()
-
-if st.button("📌 CHỐT BỘ SỐ KỲ TỚI"):
-    if safe:
-        state["current_set"] = [safe[0]["Bộ số"]]
-        state["type"] = "3 số 5 tinh"
-        state["ky"] = int(df["ky"].max()) + 1
-        save_state(state)
-        st.success("Đã chốt bộ số kỳ tiếp theo")
-
-# ===== SESSION =====
-st.subheader("📊 THEO DÕI KỲ ĐANG ĐÁNH")
-state = load_state()
-st.info(f"Kỳ: {state['ky']} | Bộ số: {state['current_set']} | Loại: {state['type']}")
-
-if st.button("✅ TRÚNG"):
-    win_df = load_csv(WIN_FILE, ["time", "ky", "combo", "type"])
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for c in state["current_set"]:
-        win_df.loc[len(win_df)] = [now, state["ky"], c, state["type"]]
-    save_csv(win_df, WIN_FILE)
-    st.success("Đã ghi nhận kỳ TRÚNG")
-
-if st.button("❌ THUA – RESET"):
-    save_state({"current_set": [], "type": "", "ky": state["ky"]})
-    st.warning("Đã reset bộ số – phân tích lại")
-
-# ===== HISTORY =====
-st.subheader("🏆 LỊCH SỬ THẮNG")
-win_df = load_csv(WIN_FILE, ["time", "ky", "combo", "type"])
-if not win_df.empty:
-    st.table(win_df.tail(10))
-
-st.caption("🚀 LOTOBET AUTO PRO V3 | Đánh theo kỳ – Có kỷ luật – Không đoán mò")
+st.caption("🚀 LOTOBET AUTO PRO V3 – AI V6 | Đánh theo kỳ – Có kỷ luật – Không đoán mò")
