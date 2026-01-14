@@ -133,33 +133,63 @@ def analyze_v35(df, kind="2"):
 
     return out
 
-# ================= UI =================
-st.title("🎯 LOTOBET AUTO PRO – AI V3.5")
+# ================= STORAGE V3.6 (FOR V3.5 UI) =================
+RAW_FILE = "raw_input.csv"
+PAIR2_FILE = "pair_2.csv"
+PAIR3_FILE = "pair_3.csv"
 
-raw = st.text_area(
-    "📥 Dán kết quả (mỗi dòng 1 số 5 chữ số)",
-    height=120
-)
+def load_df(path, cols):
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+        for c in cols:
+            if c not in df.columns:
+                df[c] = None
+        return df[cols]
+    return pd.DataFrame(columns=cols)
 
-if st.button("💾 LƯU KỲ"):
-    nums = re.findall(r"\d{5}", raw)
-    pairs_2 = [n[-2:] for n in nums]
-    pairs_3 = [n[-3:] for n in nums]
+def next_ky(df):
+    if df.empty:
+        return 1
+    return int(df["ky"].max()) + 1
 
-    if nums:
-        added = save_pairs_unique(pairs_2, pairs_3)
-        st.success(f"Đã lưu {added} kỳ (tự động bỏ trùng)")
-    else:
-        st.error("Sai định dạng")
+def save_numbers_v36(numbers):
+    """
+    numbers: list số 5 chữ số
+    """
+    raw_df = load_df(RAW_FILE, ["time", "ky", "number5"])
+    pair2_df = load_df(PAIR2_FILE, ["time", "ky", "pair"])
+    pair3_df = load_df(PAIR3_FILE, ["time", "ky", "pair"])
 
-df = load_csv(DATA_FILE, ["time", "pair", "kind"])
-st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
+    ky = next_ky(raw_df)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-if len(df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để AI phân tích")
-    st.stop()
+    added = 0
 
-st.divider()
+    for num in numbers:
+        # ❌ TRÙNG TUYỆT ĐỐI
+        if not raw_df[raw_df["number5"] == num].empty:
+            continue
+
+        raw_df.loc[len(raw_df)] = [now, ky, num]
+
+        # ===== 2 TINH =====
+        p2 = num[-2:]
+        if pair2_df.empty or pair2_df.iloc[-1]["pair"] != p2:
+            pair2_df.loc[len(pair2_df)] = [now, ky, p2]
+
+        # ===== 3 TINH =====
+        p3 = num[-3:]
+        if pair3_df.empty or pair3_df.iloc[-1]["pair"] != p3:
+            pair3_df.loc[len(pair3_df)] = [now, ky, p3]
+
+        added += 1
+        ky += 1
+
+    raw_df.to_csv(RAW_FILE, index=False)
+    pair2_df.to_csv(PAIR2_FILE, index=False)
+    pair3_df.to_csv(PAIR3_FILE, index=False)
+
+    return added
 
 # ===== 2 TỈNH =====
 st.subheader("🔥 TOP 2 TỈNH")
@@ -174,7 +204,29 @@ st.markdown(f"""
 - 🔁 **Cầu:** {best2['Cầu']}
 - ✅ **Tỷ lệ trúng:** `{best2['Tỷ lệ trúng (%)']}%`
 """)
+st.divider()
+st.subheader("🔥 TOP 3 TỈNH")
 
+analysis_3 = analyze_v35(df, "3")
+
+if analysis_3.empty:
+    st.warning("⚠️ Chưa có đủ dữ liệu hoặc cầu 3 tỉnh chưa đạt điều kiện")
+else:
+    st.dataframe(
+        analysis_3.head(5),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    best3 = analysis_3.iloc[0]
+
+    st.markdown(f"""
+    ### 🧠 KẾT LUẬN 3 TỈNH
+    - 🎯 **Cặp:** `{best3['Cặp']}`
+    - 📊 **Điểm AI:** `{best3['Điểm AI (%)']}%`
+    - 🔁 **Cầu:** {best3['Cầu']}
+    - ✅ **Tỷ lệ trúng:** `{best3['Tỷ lệ trúng (%)']}%`
+    """)
 # ===== 3 TỈNH =====
 st.subheader("🔥 TOP 3 TỈNH")
 analysis_3 = analyze_v35(df, "3")
