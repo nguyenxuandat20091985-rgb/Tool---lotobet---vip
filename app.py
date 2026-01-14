@@ -1,130 +1,171 @@
 import streamlit as st
 import pandas as pd
-import re
-from collections import Counter
+import re, os, json
 from datetime import datetime
-import os
 from itertools import combinations
+from collections import Counter
 
-# ================== CONFIG ==================
+# ================= CONFIG =================
 st.set_page_config(
-    page_title="LOTOBET AUTO PRO – V3 KU",
+    page_title="LOTOBET AUTO PRO V3.5",
     layout="wide",
     page_icon="🎯"
 )
 
-DATA_FILE = "data.csv"
+RESULT_FILE = "results.csv"
+SESSION_FILE = "sessions.csv"
+WIN_FILE = "wins.csv"
+STATE_FILE = "state.json"
 
-# ================== DATA CORE ==================
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return pd.DataFrame(columns=["time", "result"])
+# ================= CORE DATA =================
+def load_csv(path, cols):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=cols)
 
-    df = pd.read_csv(DATA_FILE)
+def save_csv(df, path):
+    df.to_csv(path, index=False)
 
-    # FIX DATA CŨ (pair → result)
-    if "result" not in df.columns and "pair" in df.columns:
-        df["result"] = df["pair"].astype(str).str.zfill(5)
-        df = df[["time", "result"]]
-        df.to_csv(DATA_FILE, index=False)
+def load_state():
+    if os.path.exists(STATE_FILE):
+        return json.load(open(STATE_FILE))
+    return {"current_set": [], "type": ""}
 
-    return df
+def save_state(state):
+    json.dump(state, open(STATE_FILE, "w"), indent=2)
 
-def save_results(results):
-    df = load_data()
+# ================= SAVE RESULT =================
+def save_result(numbers):
+    df = load_csv(RESULT_FILE, ["time", "result"])
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new = pd.DataFrame([{"time": now, "result": r} for r in results])
-    df = pd.concat([df, new], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
+    new = pd.DataFrame([{"time": now, "result": n} for n in numbers])
+    save_csv(pd.concat([df, new]), RESULT_FILE)
 
-# ================== ANALYSIS ==================
-def analyze_pairs(df):
-    pairs = Counter()
-    for r in df["result"]:
-        r = str(r).zfill(5)
-        pairs.update([int(r[-2:])])
-    return pairs.most_common(10)
+# ================= STREAK ANALYSIS =================
+def analyze_streaks(df):
+    results = df["result"].astype(str).str.zfill(5)
+    streak = {}
 
+    for n in "0123456789":
+        miss = 0
+        for r in reversed(results):
+            if n in r:
+                break
+            miss += 1
+        streak[n] = miss
+
+    return streak
+
+# ================= NON FIXED ANALYSIS =================
 def analyze_non_fixed(df, k):
     results = df["result"].astype(str).str.zfill(5)
     stats = []
 
-    for comb in combinations(range(10), k):
-        hit = 0
-        for r in results:
-            if set(map(str, comb)).issubset(set(r)):
-                hit += 1
-        rate = hit / len(results) * 100
+    for combo in combinations("0123456789", k):
+        combo = tuple(sorted(combo))
+        hit = sum(1 for r in results if set(combo).issubset(set(r)))
+        rate = round(hit / len(results) * 100, 2)
+
         stats.append({
-            "Bộ số": "-".join(map(str, comb)),
+            "Bộ số": "-".join(combo),
             "Số lần trúng": hit,
-            "Tỉ lệ %": round(rate, 2)
+            "Tỉ lệ %": rate
         })
 
     return sorted(stats, key=lambda x: x["Tỉ lệ %"], reverse=True)
 
-# ================== UI ==================
-st.title("🎯 LOTOBET AUTO PRO – V3 (CHUẨN KU – FIXED)")
+# ================= CHECK WIN =================
+def check_win(combo, result):
+    return set(combo.split("-")).issubset(set(result))
 
+# ================= UI =================
+st.title("🎯 LOTOBET AUTO PRO – V3.5 (THỰC CHIẾN KU)")
+
+# ================= INPUT =================
 with st.expander("📥 NHẬP KẾT QUẢ 5 TINH", expanded=True):
-    raw = st.text_area(
-        "Mỗi dòng 1 số 5 tinh (VD: 12864)",
-        height=120
-    )
+    raw = st.text_area("Mỗi dòng 1 số (VD: 12864)", height=100)
     if st.button("💾 LƯU KẾT QUẢ"):
         nums = re.findall(r"\d{5}", raw)
         if nums:
-            save_results(nums)
+            save_result(nums)
             st.success(f"Đã lưu {len(nums)} kỳ")
         else:
-            st.error("Không nhận diện được số 5 tinh")
+            st.error("Không hợp lệ")
 
-df = load_data()
-st.info(f"📊 Tổng dữ liệu hiện có: {len(df)} kỳ")
+df = load_csv(RESULT_FILE, ["time", "result"])
+st.info(f"📊 Tổng dữ liệu: {len(df)} kỳ")
 
 if len(df) < 30:
-    st.warning("Cần tối thiểu 30 kỳ để phân tích")
+    st.warning("Cần ít nhất 30 kỳ để phân tích")
     st.stop()
 
-# ================== TABS ==================
-tab1, tab2, tab3 = st.tabs([
-    "🔢 HÀNG SỐ 5 TINH",
-    "🟢 2 SỐ 5 TINH",
-    "🔥 3 SỐ 5 TINH"
-])
+# ================= STREAK =================
+streaks = analyze_streaks(df)
 
-# ================== TAB 1 ==================
+st.subheader("🔥 THEO DÕI BỆT SỐ")
+st.table(pd.DataFrame([
+    {"Số": k, "Số kỳ chưa ra": v,
+     "Trạng thái": "🔥 SẮP BẬT" if v >= 5 else "🟢 BÌNH THƯỜNG"}
+    for k, v in streaks.items()
+]))
+
+# ================= ANALYSIS =================
+tab1, tab2 = st.tabs(["🟢 2 SỐ 5 TINH", "🔥 3 SỐ 5 TINH"])
+
 with tab1:
-    st.subheader("📈 HÀNG SỐ 5 TINH (2 SỐ CUỐI)")
-    top_pairs = analyze_pairs(df)
-    st.table(pd.DataFrame(top_pairs, columns=["Cặp số", "Số lần về"]))
+    top2 = analyze_non_fixed(df, 2)[:10]
+    st.table(top2)
 
-    best = top_pairs[0]
-    st.success(f"🎯 KHUYẾN NGHỊ: ĐÁNH CẶP **{best[0]}**")
-
-# ================== TAB 2 ==================
 with tab2:
-    st.subheader("🟢 KHÔNG CỐ ĐỊNH – 2 SỐ 5 TINH")
-    top2 = analyze_non_fixed(df, 2)[:5]
-    st.table(pd.DataFrame(top2))
+    top3 = analyze_non_fixed(df, 3)[:10]
+    st.table(top3)
 
-    best = top2[0]
-    st.success(
-        f"🎯 ĐÁNH 2 SỐ **{best['Bộ số']}** | "
-        f"Tỉ lệ {best['Tỉ lệ %']}%"
-    )
+# ================= SUGGEST NEXT =================
+def suggest(stats):
+    sug = []
+    for s in stats:
+        nums = s["Bộ số"].split("-")
+        hot = sum(1 for n in nums if streaks[n] >= 5)
+        if hot >= 1:
+            sug.append(s)
+    return sug[:3]
 
-# ================== TAB 3 ==================
-with tab3:
-    st.subheader("🔥 KHÔNG CỐ ĐỊNH – 3 SỐ 5 TINH")
-    top3 = analyze_non_fixed(df, 3)[:5]
-    st.table(pd.DataFrame(top3))
+st.subheader("🚦 ĐỀ XUẤT KỲ TIẾP THEO")
 
-    best = top3[0]
-    st.success(
-        f"🎯 ĐÁNH 3 SỐ **{best['Bộ số']}** | "
-        f"Tỉ lệ {best['Tỉ lệ %']}%"
-    )
+suggest_3 = suggest(top3)
+st.table(suggest_3)
 
-st.markdown("---")
-st.caption("🚀 LOTOBET AUTO PRO V3 | FIXED | Phân tích đúng luật KU")
+state = load_state()
+
+if st.button("📌 CHỌN BỘ SỐ ĐÁNH KỲ TỚI"):
+    if suggest_3:
+        state["current_set"] = [suggest_3[0]["Bộ số"]]
+        state["type"] = "3 số 5 tinh"
+        save_state(state)
+        st.success("Đã chọn bộ số đánh")
+
+# ================= SESSION TRACK =================
+st.subheader("📊 THEO DÕI KỲ")
+
+state = load_state()
+st.info(f"🎯 Bộ đang đánh: {state['current_set']} | Loại: {state['type']}")
+
+if st.button("✅ XÁC NHẬN TRÚNG"):
+    win_df = load_csv(WIN_FILE, ["time", "combo", "type"])
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for c in state["current_set"]:
+        win_df.loc[len(win_df)] = [now, c, state["type"]]
+    save_csv(win_df, WIN_FILE)
+    st.success("Đã ghi nhận TRÚNG")
+
+if st.button("❌ THUA – RESET BỘ SỐ"):
+    save_state({"current_set": [], "type": ""})
+    st.warning("Đã reset bộ số")
+
+# ================= HISTORY =================
+st.subheader("🏆 LỊCH SỬ TRÚNG")
+win_df = load_csv(WIN_FILE, ["time", "combo", "type"])
+if not win_df.empty:
+    st.table(win_df.tail(10))
+
+st.caption("🚀 LOTOBET AUTO PRO V3.5 | Chơi theo kỳ – Không đoán mò")
