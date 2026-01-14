@@ -1,124 +1,140 @@
 import streamlit as st
 import pandas as pd
 import re
-from itertools import combinations
-from collections import Counter
 import os
+from collections import Counter
+from datetime import datetime
 
-st.set_page_config("LOTOBET V3.5 – Không cố định 2–3 tinh", layout="centered")
+# ================= CONFIG =================
+st.set_page_config(
+    page_title="LOTOBET AUTO PRO – V3.6",
+    layout="centered",
+    page_icon="🎯"
+)
 
-DATA_FILE = "results.csv"
-MIN_DATA = 30
+DATA_FILE = "data_v36.csv"
+HIS_FILE = "history_v36.csv"
+MIN_DATA = 40
+FAST_WINDOW = 300   # chỉ phân tích 300 kỳ gần nhất
 
-# ================= DATA =================
-def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    return pd.DataFrame(columns=["result"])
+# ================= STORAGE =================
+def load_csv(path, cols):
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=cols)
 
-def save_results(nums):
-    df = load_data()
-    new = pd.DataFrame({"result": nums})
-    df = pd.concat([df, new], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
+def save_data(new_pairs):
+    df = load_csv(DATA_FILE, ["time", "pair"])
+    exist = set(df["pair"].astype(str) + df["time"].astype(str))
 
-def result_to_set(x):
-    return set(str(x).zfill(5))
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = []
+    for p in new_pairs:
+        key = str(p) + now
+        if key not in exist:
+            rows.append({"time": now, "pair": int(p)})
 
-# ================= CORE =================
-def build_sets(df):
-    return [result_to_set(x) for x in df["result"]]
+    if rows:
+        df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
+        df.to_csv(DATA_FILE, index=False)
+    return len(rows)
 
-def generate_candidates(size):
-    digits = list("0123456789")
-    return [set(c) for c in combinations(digits, size)]
+# ================= ANALYSIS =================
+def analyze_core(df):
+    df_fast = df.tail(FAST_WINDOW)
+    pairs = df_fast["pair"].astype(str).str.zfill(2)
 
-def check_hit(open_set, bet_set):
-    return bet_set.issubset(open_set)
+    cnt_all = Counter(pairs)
+    cnt_20 = Counter(pairs.tail(20))
+    cnt_50 = Counter(pairs.tail(50))
 
-def analyze(size, df, lookback=30):
-    opens = build_sets(df)
-    candidates = generate_candidates(size)
-    stats = []
+    results = []
+    for p in cnt_all:
+        score = (
+            cnt_20.get(p,0)*0.5 +
+            cnt_50.get(p,0)*0.3 +
+            cnt_all.get(p,0)*0.2
+        )
+        percent = round(score / 20 * 100, 2)
 
-    for c in candidates:
-        hits = 0
-        last_hit = None
+        # cầu lặp
+        last_positions = [i for i,x in enumerate(pairs) if x == p]
+        cycle = "—"
+        if len(last_positions) >= 2:
+            gap = last_positions[-1] - last_positions[-2]
+            if gap <= 2:
+                cycle = "🔥 Lặp nhanh"
+            elif gap <= 5:
+                cycle = "⏳ Đang nuôi"
+            else:
+                cycle = "❄️ Lạnh"
 
-        for i in range(len(opens)-1, max(-1, len(opens)-lookback-1), -1):
-            if check_hit(opens[i], c):
-                hits += 1
-                if last_hit is None:
-                    last_hit = len(opens)-1 - i
-
-        rate = round(hits / lookback * 100, 2)
-        cycle = last_hit if last_hit is not None else 999
-
-        if cycle <= 1:
-            status = "⏳ Vừa ra"
-        elif rate >= 25:
-            status = "🔥 Đang chạy"
-        elif cycle >= 15:
-            status = "❄️ Lạnh"
-        else:
-            status = "⚠️ Theo dõi"
-
-        stats.append({
-            "Bộ số": ",".join(sorted(c)),
-            "Tỷ lệ %": rate,
-            "Chu kỳ": cycle,
-            "Trạng thái": status
+        results.append({
+            "pair": p,
+            "score": percent,
+            "cycle": cycle
         })
 
-    return sorted(stats, key=lambda x: (-x["Tỷ lệ %"], x["Chu kỳ"]))
+    return sorted(results, key=lambda x: x["score"], reverse=True)
+
+# ================= TRACK =================
+def record_result(pair, hit):
+    df = load_csv(HIS_FILE, ["time","pair","result"])
+    df.loc[len(df)] = [
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        pair,
+        "TRÚNG" if hit else "TRƯỢT"
+    ]
+    df.to_csv(HIS_FILE, index=False)
 
 # ================= UI =================
-st.title("🎯 LOTOBET AUTO PRO – V3.5")
+st.title("🎯 LOTOBET AUTO PRO – V3.6")
 
-raw = st.text_area("📥 Nhập kết quả (mỗi dòng 1 số 5 chữ số)")
-if st.button("💾 Lưu dữ liệu"):
-    nums = re.findall(r"\d{5}", raw)
-    if nums:
-        save_results(nums)
-        st.success(f"Đã lưu {len(nums)} kỳ")
+raw = st.text_area("📥 Dán kết quả (mỗi dòng 1 số – tối thiểu 2 số cuối)", height=120)
+
+if st.button("💾 LƯU DỮ LIỆU"):
+    digits = re.findall(r"\d{2,}", raw)
+    pairs = [d[-2:] for d in digits]
+    if pairs:
+        saved = save_data(pairs)
+        st.success(f"✅ Đã lưu {saved} kỳ (đã tự lọc trùng)")
     else:
-        st.error("Sai định dạng")
+        st.error("❌ Không nhận diện được dữ liệu")
 
-df = load_data()
-st.info(f"Tổng dữ liệu: {len(df)} kỳ")
+df = load_csv(DATA_FILE, ["time","pair"])
+st.info(f"📊 Tổng dữ liệu hợp lệ: {len(df)} kỳ")
 
-if len(df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để phân tích")
-    st.stop()
+# ================= PREDICT =================
+if len(df) >= MIN_DATA:
+    analysis = analyze_core(df)
 
-st.divider()
+    st.subheader("🔥 TOP 5 CẶP ĐỀ XUẤT")
+    st.table(pd.DataFrame(analysis[:5]))
 
-# ===== 2 TINH =====
-st.subheader("🔢 TOP 2 TINH (KHÔNG CỐ ĐỊNH)")
-res2 = analyze(2, df)
-st.table(res2[:5])
+    best = analysis[0]
 
-best2 = res2[0]
-st.markdown(f"""
-**Đề xuất:** `{best2['Bộ số']}`  
-**Tỷ lệ:** `{best2['Tỷ lệ %']}%`  
-**Chu kỳ:** `{best2['Chu kỳ']}`  
-**Trạng thái:** {best2['Trạng thái']}
-""")
+    st.subheader("🧠 KẾT LUẬN AI")
+    st.markdown(f"""
+    **Cặp đề xuất:** `{best['pair']}`  
+    **Xác suất AI:** `{best['score']}%`  
+    **Trạng thái cầu:** {best['cycle']}
+    """)
 
-st.divider()
+    if best["score"] >= 25:
+        st.success("✅ NÊN ĐÁNH (1–2 tay)")
+    else:
+        st.warning("⚠️ NÊN THEO DÕI")
 
-# ===== 3 TINH =====
-st.subheader("🔢 TOP 3 TINH (KHÔNG CỐ ĐỊNH)")
-res3 = analyze(3, df)
-st.table(res3[:5])
+    col1, col2 = st.columns(2)
+    if col1.button("✅ TRÚNG"):
+        record_result(best["pair"], True)
+        st.success("Đã ghi nhận TRÚNG")
+    if col2.button("❌ TRƯỢT"):
+        record_result(best["pair"], False)
+        st.warning("Đã ghi nhận TRƯỢT")
 
-best3 = res3[0]
-st.markdown(f"""
-**Đề xuất:** `{best3['Bộ số']}`  
-**Tỷ lệ:** `{best3['Tỷ lệ %']}%`  
-**Chu kỳ:** `{best3['Chu kỳ']}`  
-**Trạng thái:** {best3['Trạng thái']}
-""")
-
-st.caption("⚠️ Tool hỗ trợ xác suất – đánh phải có kỷ luật")
+# ================= HISTORY =================
+st.subheader("🧾 LỊCH SỬ THEO DÕI")
+his = load_csv(HIS_FILE, ["time","pair","result"])
+if not his.empty:
+    st.table(his.tail(10))
