@@ -1,212 +1,234 @@
 import streamlit as st
 import pandas as pd
-import re, os
+import sqlite3
+import re
+import numpy as np
 from datetime import datetime
 from collections import Counter
 
-# ================= CONFIG =================
+# ================== CONFIG ==================
 st.set_page_config(
-    page_title="LOTOBET AUTO PRO – AI V3.7 FULL",
-    layout="centered",
+    page_title="LOTOBET ULTRA AI – V10.0",
+    layout="wide",
     page_icon="🎯"
 )
 
-RAW_FILE   = "raw_5so.csv"
-PAIR2_FILE = "pair_2.csv"
-PAIR3_FILE = "pair_3.csv"
-RESULT_LOG = "result_log.csv"
+DB_FILE = "lotobet_ultra.db"
 
-MIN_DATA = 40
+# ================== DATABASE ==================
+def get_conn():
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
-# ================= UTIL =================
-def load_csv(path, cols):
-    if os.path.exists(path):
-        df = pd.read_csv(path, dtype=str)
-        for c in cols:
-            if c not in df.columns:
-                df[c] = ""
-        return df[cols]
-    return pd.DataFrame(columns=cols)
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
 
-def save_csv(df, path):
-    df.to_csv(path, index=False)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS raw_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        time TEXT,
+        ky INTEGER,
+        number5 TEXT
+    )
+    """)
 
-def now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS pair2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ky INTEGER,
+        pair TEXT
+    )
+    """)
 
-# ================= SAVE DATA =================
-def save_numbers(numbers):
-    raw = load_csv(RAW_FILE, ["time","number"])
-    p2  = load_csv(PAIR2_FILE, ["time","pair"])
-    p3  = load_csv(PAIR3_FILE, ["time","pair"])
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS pair3 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ky INTEGER,
+        pair TEXT
+    )
+    """)
 
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ================== UTIL ==================
+def next_ky():
+    conn = get_conn()
+    df = pd.read_sql("SELECT MAX(ky) ky FROM raw_data", conn)
+    conn.close()
+    if df.iloc[0]["ky"] is None:
+        return 1
+    return int(df.iloc[0]["ky"]) + 1
+
+def normalize_input(text):
+    nums = re.findall(r"\d{5}", text)
+    return nums
+
+def save_numbers(nums):
+    if not nums:
+        return 0
+
+    conn = get_conn()
+    ky = next_ky()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     added = 0
 
-    for n in numbers:
-        if n in raw["number"].values:
+    for n in nums:
+        # chống trùng tuyệt đối
+        check = pd.read_sql(
+            "SELECT 1 FROM raw_data WHERE number5 = ?",
+            conn, params=(n,)
+        )
+        if not check.empty:
             continue
 
-        raw.loc[len(raw)] = [now(), n]
+        conn.execute(
+            "INSERT INTO raw_data (time, ky, number5) VALUES (?, ?, ?)",
+            (now, ky, n)
+        )
 
-        d2 = n[-2:]
-        d3 = n[-3:]
+        p2 = n[-2:]
+        p3 = n[-3:]
 
-        if p2.empty or p2.iloc[-1]["pair"] != d2:
-            p2.loc[len(p2)] = [now(), d2]
+        conn.execute("INSERT INTO pair2 (ky, pair) VALUES (?, ?)", (ky, p2))
+        conn.execute("INSERT INTO pair3 (ky, pair) VALUES (?, ?)", (ky, p3))
 
-        if p3.empty or p3.iloc[-1]["pair"] != d3:
-            p3.loc[len(p3)] = [now(), d3]
-
+        ky += 1
         added += 1
 
-    save_csv(raw, RAW_FILE)
-    save_csv(p2, PAIR2_FILE)
-    save_csv(p3, PAIR3_FILE)
-
+    conn.commit()
+    conn.close()
     return added
 
-# ================= RESULT MEMORY =================
-def log_result(pair, hit):
-    df = load_csv(RESULT_LOG, ["time","pair","result"])
-    df.loc[len(df)] = [now(), pair, "TRÚNG" if hit else "TRƯỢT"]
-    save_csv(df, RESULT_LOG)
+def load_df(table):
+    conn = get_conn()
+    df = pd.read_sql(f"SELECT * FROM {table}", conn)
+    conn.close()
+    return df
 
-def win_rate(pair, lookback=30):
-    df = load_csv(RESULT_LOG, ["time","pair","result"])
-    df = df[df["pair"] == pair].tail(lookback)
+# ================== AI CORE ==================
+def ai_analyze(df, label):
     if df.empty:
-        return 0
-    return round((df["result"] == "TRÚNG").mean()*100,2)
+        return pd.DataFrame()
 
-# ================= AI CORE =================
-def analyze_pair(df):
-    total = len(df)
-    last10 = df.tail(10)["pair"].tolist()
-    last20 = df.tail(20)["pair"].tolist()
+    seq = df["pair"].tolist()
+    total = len(seq)
+    last20 = seq[-20:]
 
-    cnt_all = Counter(df["pair"])
-    cnt10 = Counter(last10)
+    cnt_all = Counter(seq)
     cnt20 = Counter(last20)
 
     rows = []
-
     for pair in cnt_all:
-        score = (
-            (cnt10[pair]/10)*0.5 +
-            (cnt20[pair]/20)*0.3 +
-            (cnt_all[pair]/total)*0.2
-        ) * 100
+        freq = cnt20[pair] / 20 if pair in cnt20 else 0
+        freq_all = cnt_all[pair] / total
 
-        rate = win_rate(pair)
+        # cầu lặp
+        pos = [i for i, p in enumerate(seq) if p == pair]
+        gap_score = 0
+        if len(pos) >= 3:
+            gaps = np.diff(pos[-3:])
+            avg_gap = np.mean(gaps)
+            last_gap = total - pos[-1]
+            if abs(last_gap - avg_gap) <= 1:
+                gap_score = 20
+            elif last_gap < avg_gap:
+                gap_score = -10
+            else:
+                gap_score = -15
 
-        if cnt10[pair] >= 4:
-            score -= 25
-        elif cnt10[pair] == 3:
-            score += 10
-
-        score = round(score,2)
-
-        if score <= 0:
-            continue
+        score = round((freq * 60 + freq_all * 40) + gap_score, 2)
 
         rows.append({
             "Cặp": pair,
             "Điểm AI (%)": score,
-            "Tỷ lệ trúng (%)": rate
+            "Tỷ lệ trúng (%)": round(freq_all * 100, 2)
         })
 
-    if not rows:
-        return pd.DataFrame(columns=["Cặp","Điểm AI (%)","Tỷ lệ trúng (%)"])
+    out = pd.DataFrame(rows)
+    out = out[out["Điểm AI (%)"] > 0]
+    out = out.sort_values("Điểm AI (%)", ascending=False)
+    return out
 
-    return pd.DataFrame(rows).sort_values("Điểm AI (%)", ascending=False)
+def tai_xiu(num):
+    s = sum(int(x) for x in num)
+    return "TÀI" if s >= 23 else "XỈU"
 
-# ================= TÀI XỈU =================
-def tai_xiu_stats(raw):
-    nums = raw["number"].astype(str)
-    tx = []
-    for n in nums:
-        s = sum(int(x) for x in n)
-        tx.append("TÀI" if s >= 23 else "XỈU")
-    return Counter(tx)
+# ================== UI ==================
+st.title("🎯 LOTOBET ULTRA AI – V10.0")
 
-# ================= UI =================
-st.title("🎯 LOTOBET AUTO PRO – AI V3.7 FULL")
-
-raw_input = st.text_area("📥 Nhập kết quả (mỗi dòng 1 số 5 chữ số)", height=120)
+# -------- INPUT --------
+st.subheader("📥 NHẬP DỮ LIỆU (TỰ ĐỘNG)")
+raw = st.text_area(
+    "Dán kết quả (mỗi số 5 chữ số – dán cột hay dòng đều được)",
+    height=120
+)
 
 if st.button("💾 LƯU DỮ LIỆU"):
-    nums = re.findall(r"\d{5}", raw_input)
-    if nums:
-        added = save_numbers(nums)
-        st.success(f"Đã lưu {added} kỳ (tự loại trùng)")
+    nums = normalize_input(raw)
+    added = save_numbers(nums)
+    st.success(f"Đã lưu {added} kỳ mới")
+
+# -------- LOAD DATA --------
+raw_df = load_df("raw_data")
+pair2_df = load_df("pair2")
+pair3_df = load_df("pair3")
+
+# ================== DASHBOARD ==================
+st.divider()
+
+colA, colB, colC, colD = st.columns(4)
+
+# ===== KHUNG A =====
+with colA:
+    st.markdown("## 📊 TỔNG KỲ")
+    st.metric("Tổng kỳ", len(raw_df))
+    if not raw_df.empty:
+        last = raw_df.iloc[-1]
+        st.caption(f"Kỳ gần nhất: #{last['ky']}")
+
+# ===== KHUNG B =====
+with colB:
+    st.markdown("## 🔁 2 TINH")
+    st.caption(f"( 2 tinh: {len(pair2_df)} • 3 tinh: {len(pair3_df)} )")
+    analysis2 = ai_analyze(pair2_df, "2")
+    if analysis2.empty:
+        st.warning("Chưa đủ dữ liệu")
     else:
-        st.error("Sai định dạng")
+        best2 = analysis2.iloc[0]
+        st.metric("ĐÁNH 2 SỐ", best2["Cặp"])
+        st.write("Điểm AI:", best2["Điểm AI (%)"], "%")
 
-raw_df  = load_csv(RAW_FILE, ["time","number"])
-pair2_df = load_csv(PAIR2_FILE, ["time","pair"])
-pair3_df = load_csv(PAIR3_FILE, ["time","pair"])
+# ===== KHUNG C =====
+with colC:
+    st.markdown("## 🔁 3 TINH")
+    st.caption(f"( 2 tinh: {len(pair2_df)} • 3 tinh: {len(pair3_df)} )")
+    analysis3 = ai_analyze(pair3_df, "3")
+    if analysis3.empty:
+        st.warning("Chưa đủ dữ liệu")
+    else:
+        best3 = analysis3.iloc[0]
+        st.metric("ĐÁNH 3 SỐ", best3["Cặp"])
+        st.write("Điểm AI:", best3["Điểm AI (%)"], "%")
 
-st.info(f"""
-📊 Tổng kỳ: {len(raw_df)}  
-• 2 tinh: {len(pair2_df)}  
-• 3 tinh: {len(pair3_df)}
-""")
+# ===== KHUNG D =====
+with colD:
+    st.markdown("## 🎯 SỐ CẦN ĐÁNH")
+    if not analysis2.empty:
+        st.success(f"2 SỐ: {analysis2.iloc[0]['Cặp']}")
+    if not analysis3.empty:
+        st.success(f"3 SỐ: {analysis3.iloc[0]['Cặp']}")
+    st.caption("Dựa trên AI lịch sử – không phải may rủi")
 
-if len(pair2_df) < MIN_DATA:
-    st.warning("Chưa đủ dữ liệu để AI phân tích")
-    st.stop()
-
-# ================= 2 TINH =================
+# ================== PHÂN TÍCH NÂNG CAO ==================
 st.divider()
-st.subheader("🔥 TOP 2 TINH")
+st.subheader("📊 PHÂN TÍCH BỔ SUNG")
 
-analysis2 = analyze_pair(pair2_df)
+if not raw_df.empty:
+    last_num = raw_df.iloc[-1]["number5"]
+    st.write("🎲 Tài / Xỉu kỳ gần nhất:", tai_xiu(last_num))
+    st.write("🔄 Trạng thái:", "🔁 Đang phân tích cầu...")
 
-if analysis2.empty:
-    st.warning("Không có cầu 2 tinh phù hợp")
-else:
-    st.dataframe(analysis2.head(5), use_container_width=True, hide_index=True)
-    best2 = analysis2.iloc[0]
-
-    st.markdown(f"""
-    **Cặp 2 tinh:** `{best2['Cặp']}`  
-    **Điểm AI:** `{best2['Điểm AI (%)']}%`  
-    **Tỷ lệ trúng:** `{best2['Tỷ lệ trúng (%)']}%`
-    """)
-
-# ================= 3 TINH =================
-st.divider()
-st.subheader("🔥 TOP 3 TINH")
-
-analysis3 = analyze_pair(pair3_df)
-
-if analysis3.empty:
-    st.warning("Không có cầu 3 tinh phù hợp")
-else:
-    st.dataframe(analysis3.head(5), use_container_width=True, hide_index=True)
-    best3 = analysis3.iloc[0]
-
-    st.markdown(f"""
-    **Cặp 3 tinh:** `{best3['Cặp']}`  
-    **Điểm AI:** `{best3['Điểm AI (%)']}%`  
-    **Tỷ lệ trúng:** `{best3['Tỷ lệ trúng (%)']}%`
-    """)
-
-# ================= TÀI XỈU =================
-st.divider()
-st.subheader("⚖️ TÀI / XỈU")
-
-tx = tai_xiu_stats(raw_df)
-st.write(dict(tx))
-
-# ================= SỔ ĐỀ =================
-st.divider()
-st.subheader("📘 SỔ ĐỀ")
-
-log_df = load_csv(RESULT_LOG, ["time","pair","result"])
-if log_df.empty:
-    st.info("Chưa có lịch sử trúng/trượt")
-else:
-    st.dataframe(log_df.tail(10), use_container_width=True, hide_index=True)
-
-st.caption("⚠️ AI hỗ trợ xác suất – kỷ luật & quản lý vốn quyết định kết quả")
+st.caption("⚠️ Tool hỗ trợ xác suất – quản lý vốn & kỷ luật là bắt buộc")
