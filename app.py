@@ -1,5 +1,5 @@
 # ================= LOTOBET ULTRA AI PRO – V10.0 MINIMAL =================
-# Phiên bản không cần matplotlib, plotly, chỉ dùng streamlit native
+# Streamlit Cloud Compatible - English keywords only
 
 import streamlit as st
 import pandas as pd
@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS đơn giản
+# Simple CSS
 st.markdown("""
 <style>
     .highlight-box {
@@ -57,14 +57,6 @@ st.markdown("""
         padding: 10px;
         border-radius: 5px;
         border: 1px solid #ddd;
-    }
-    .blink {
-        animation: blink 1s infinite;
-    }
-    @keyframes blink {
-        0% { opacity: 1; }
-        50% { opacity: 0.3; }
-        100% { opacity: 1; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -167,35 +159,7 @@ def smart_parse_input(raw_text):
     
     return results
 
-def get_trend_icon(trend_type):
-    icons = {
-        "bệt_mạnh": "⏫",
-        "bệt_yếu": "⏸️",
-        "đảo_cầu": "🔀",
-        "lặp_số": "🔁",
-        "cầu_gãy": "❌",
-        "cầu_sống": "✅",
-        "đang_phân_tích": "🔄",
-        "cảnh_báo": "⚠️",
-        "xu_hướng_lên": "📈",
-        "xu_hướng_xuống": "📉"
-    }
-    
-    colors = {
-        "bệt_mạnh": "#FF5252",
-        "bệt_yếu": "#FF9800",
-        "đảo_cầu": "#FFC107",
-        "cầu_gãy": "#F44336",
-        "cầu_sống": "#4CAF50",
-        "cảnh_báo": "#FF9800"
-    }
-    
-    icon = icons.get(trend_type, "📊")
-    color = colors.get(trend_type, "#2196F3")
-    
-    return icon, color
-
-# ================= AI ENGINE (Giữ nguyên) =================
+# ================= AI ENGINE =================
 class LottoAIAnalyzer:
     def __init__(self, df):
         self.df = df.copy()
@@ -217,6 +181,8 @@ class LottoAIAnalyzer:
         results = []
         for pair, count in pair_counter.items():
             freq_score = (count / total_games) * 100
+            
+            # Find last seen
             last_seen = 0
             for i, num in enumerate(reversed(nums)):
                 if all(digit in num for digit in pair):
@@ -226,16 +192,19 @@ class LottoAIAnalyzer:
             delay_penalty = min(last_seen * 0.5, 20)
             ai_score = max(0, freq_score - delay_penalty)
             
+            # Detect trend
+            trend = self._detect_pair_trend(pair)
+            
             results.append({
-                "cặp_số": pair,
-                "tần_suất": count,
-                "tỷ_lệ": round(freq_score, 2),
-                "độ_trễ": last_seen,
-                "điểm_AI": round(ai_score, 2),
-                "xu_hướng": self._detect_pair_trend(pair)
+                "pair": pair,
+                "frequency": count,
+                "rate": round(freq_score, 2),
+                "delay": last_seen,
+                "ai_score": round(ai_score, 2),
+                "trend": trend
             })
         
-        return sorted(results, key=lambda x: x["điểm_AI"], reverse=True)[:10]
+        return sorted(results, key=lambda x: x["ai_score"], reverse=True)[:10]
     
     def analyze_3so_5tinh(self):
         if self.df.empty or len(self.df) < 20:
@@ -255,6 +224,7 @@ class LottoAIAnalyzer:
         results = []
         for trio, count in trio_counter.items():
             freq_score = (count / total_games) * 100
+            
             last_seen = 0
             for i, num in enumerate(reversed(nums)):
                 if all(digit in num for digit in trio):
@@ -264,19 +234,23 @@ class LottoAIAnalyzer:
             delay_penalty = min(last_seen * 0.3, 15)
             ai_score = max(0, freq_score - delay_penalty)
             
+            trend = self._detect_trio_trend(trio)
+            
             results.append({
-                "bộ_số": trio,
-                "tần_suất": count,
-                "tỷ_lệ": round(freq_score, 2),
-                "độ_trễ": last_seen,
-                "điểm_AI": round(ai_score, 2),
-                "xu_hướng": self._detect_trio_trend(trio)
+                "trio": trio,
+                "frequency": count,
+                "rate": round(freq_score, 2),
+                "delay": last_seen,
+                "ai_score": round(ai_score, 2),
+                "trend": trend
             })
         
-        return sorted(results, key=lambda x: x["điểm_AI"], reverse=True)[:10]
+        return sorted(results, key=lambda x: x["ai_score"], reverse=True)[:10]
     
     def _detect_pair_trend(self, pair):
         recent_games = self.df.head(20)["so5"].tolist()
+        
+        # Check for streak
         consecutive_count = 0
         for num in recent_games:
             if all(digit in num for digit in pair):
@@ -285,8 +259,9 @@ class LottoAIAnalyzer:
                 break
         
         if consecutive_count >= 3:
-            return "bệt_mạnh" if consecutive_count >= 5 else "bệt_yếu"
+            return "hot_streak" if consecutive_count >= 5 else "warm_streak"
         
+        # Check if broken
         last_seen = 0
         for num in recent_games:
             if all(digit in num for digit in pair):
@@ -295,29 +270,30 @@ class LottoAIAnalyzer:
                 last_seen += 1
         
         if last_seen >= 5:
-            return "cầu_gãy"
+            return "broken"
         
+        # Check for pattern change
         pattern = []
         for num in recent_games[:10]:
             pattern.append(1 if all(digit in num for digit in pair) else 0)
         
         if pattern.count(1) >= 6 and pattern[-1] == 1 and pattern[-2] == 0:
-            return "đảo_cầu"
+            return "reversal"
         
-        return "cầu_sống"
+        return "active"
     
     def _detect_trio_trend(self, trio):
         recent_games = self.df.head(30)["so5"].tolist()
         appearances = [1 if all(digit in num for digit in trio) else 0 for num in recent_games]
         
         if sum(appearances[-3:]) == 3:
-            return "bệt_mạnh"
+            return "hot_streak"
         elif sum(appearances[-5:]) >= 4:
-            return "bệt_yếu"
+            return "warm_streak"
         elif sum(appearances) == 0:
-            return "cầu_gãy"
+            return "broken"
         
-        return "cầu_sống"
+        return "active"
     
     def analyze_tai_xiu(self):
         if self.df.empty:
@@ -396,13 +372,13 @@ def main():
     st.title("🎰 LOTOBET ULTRA AI PRO – V10.0")
     st.markdown("---")
     
-    # Tabs
+    # Create tabs
     tabs = st.tabs([
         "📊 DASHBOARD",
-        "🎯 PHÂN TÍCH",
-        "💰 QUẢN LÝ VỐN",
-        "📥 NHẬP DỮ LIỆU",
-        "⚙️ CÀI ĐẶT"
+        "🎯 ANALYSIS",
+        "💰 CAPITAL MGMT",
+        "📥 DATA INPUT",
+        "⚙️ SETTINGS"
     ])
     
     # Load data
@@ -410,28 +386,27 @@ def main():
     
     # ================= TAB 1: DASHBOARD =================
     with tabs[0]:
-        st.subheader("📊 DASHBOARD TỔNG QUAN - 4 KHUNG RIÊNG BIỆT")
+        st.subheader("📊 DASHBOARD - 4 SEPARATE SECTIONS")
         
-        # KHUNG A: TỔNG KỲ
+        # SECTION A: TOTAL
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("📌 TỔNG KỲ TRONG DB", len(df))
-            st.caption(f"Cập nhật: {datetime.now().strftime('%H:%M:%S')}")
+            st.metric("📌 TOTAL GAMES", len(df))
+            st.caption(f"Updated: {datetime.now().strftime('%H:%M:%S')}")
             
-            # Hiển thị xu hướng đơn giản không dùng biểu đồ
             if len(df) > 5:
                 recent_totals = df.head(10)["tong"].tolist()
                 avg_tong = np.mean(recent_totals)
-                st.caption(f"Trung bình 10 kỳ gần nhất: {avg_tong:.1f}")
+                st.caption(f"Last 10 avg: {avg_tong:.1f}")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # KHUNG B: 2 SỐ 5 TÍNH
+        # SECTION B: 2 NUMBERS
         with col2:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown("### 🔥 2 SỐ 5 TÍNH")
+            st.markdown("### 🔥 2 NUMBERS 5T")
             
             if not df.empty:
                 analyzer = LottoAIAnalyzer(df)
@@ -439,35 +414,42 @@ def main():
                 
                 if results_2so:
                     best_2so = results_2so[0]
-                    icon, color = get_trend_icon(best_2so.get("xu_hướng", "cầu_sống"))
                     
-                    # Hiển thị icon
-                    st.markdown(f'<span style="font-size:24px;color:{color}">{icon}</span> **{best_2so["cặp_số"]}**', unsafe_allow_html=True)
+                    # Display with icon based on trend
+                    trend_icons = {
+                        "hot_streak": "⏫",
+                        "warm_streak": "⏸️",
+                        "reversal": "🔀",
+                        "broken": "❌",
+                        "active": "✅"
+                    }
+                    
+                    icon = trend_icons.get(best_2so["trend"], "📊")
+                    st.markdown(f"{icon} **`{best_2so['pair']}`**")
                     
                     cols = st.columns(2)
                     with cols[0]:
-                        st.metric("Điểm AI", f"{best_2so['điểm_AI']}%")
+                        st.metric("AI Score", f"{best_2so['ai_score']}%")
                     with cols[1]:
-                        st.metric("Tần suất", best_2so['tần_suất'])
+                        st.metric("Freq", best_2so['frequency'])
                     
-                    # Progress bar
-                    st.progress(min(best_2so['điểm_AI']/100, 1.0))
+                    st.progress(min(best_2so['ai_score']/100, 1.0))
                     
-                    # Format data
+                    # Original format
                     st.markdown('<div class="data-format">', unsafe_allow_html=True)
-                    st.text(f"( 2 tinh: {best_2so['cặp_số'][0]}{best_2so['cặp_số'][1]}• )")
+                    st.text(f"( 2 tinh: {best_2so['pair'][0]}{best_2so['pair'][1]}• )")
                     st.markdown('</div>', unsafe_allow_html=True)
                 else:
-                    st.warning("⏳ Đang phân tích...")
+                    st.warning("⏳ Analyzing...")
             else:
-                st.info("📥 Vui lòng nhập dữ liệu")
+                st.info("📥 Please input data")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # KHUNG C: 3 SỐ 5 TÍNH
+        # SECTION C: 3 NUMBERS
         with col3:
             st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.markdown("### 🔥 3 SỐ 5 TÍNH")
+            st.markdown("### 🔥 3 NUMBERS 5T")
             
             if not df.empty:
                 analyzer = LottoAIAnalyzer(df)
@@ -475,33 +457,41 @@ def main():
                 
                 if results_3so:
                     best_3so = results_3so[0]
-                    icon, color = get_trend_icon(best_3so.get("xu_hướng", "cầu_sống"))
                     
-                    st.markdown(f'<span style="font-size:24px;color:{color}">{icon}</span> **{best_3so["bộ_số"]}**', unsafe_allow_html=True)
+                    trend_icons = {
+                        "hot_streak": "⏫",
+                        "warm_streak": "⏸️",
+                        "reversal": "🔀",
+                        "broken": "❌",
+                        "active": "✅"
+                    }
+                    
+                    icon = trend_icons.get(best_3so["trend"], "📊")
+                    st.markdown(f"{icon} **`{best_3so['trio']}`**")
                     
                     cols = st.columns(2)
                     with cols[0]:
-                        st.metric("Điểm AI", f"{best_3so['điểm_AI']}%")
+                        st.metric("AI Score", f"{best_3so['ai_score']}%")
                     with cols[1]:
-                        st.metric("Tần suất", best_3so['tần_suất'])
+                        st.metric("Freq", best_3so['frequency'])
                     
-                    st.progress(min(best_3so['điểm_AI']/100, 1.0))
+                    st.progress(min(best_3so['ai_score']/100, 1.0))
                     
                     st.markdown('<div class="data-format">', unsafe_allow_html=True)
-                    st.text(f"( 3 tinh: {best_3so['bộ_số']}• )")
+                    st.text(f"( 3 tinh: {best_3so['trio']}• )")
                     st.markdown('</div>', unsafe_allow_html=True)
                 else:
-                    st.warning("⏳ Đang phân tích...")
+                    st.warning("⏳ Analyzing...")
             else:
-                st.info("📥 Vui lòng nhập dữ liệu")
+                st.info("📥 Please input data")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("---")
         
-        # KHUNG D: KẾT LUẬN SỐ ĐÁNH
+        # SECTION D: FINAL RECOMMENDATIONS
         st.markdown('<div class="highlight-box">', unsafe_allow_html=True)
-        st.markdown("## 🎯 SỐ CẦN ĐÁNH KỲ TIẾP THEO")
+        st.markdown("## 🎯 NUMBERS TO BET (NEXT GAME)")
         
         if not df.empty:
             analyzer = LottoAIAnalyzer(df)
@@ -517,56 +507,55 @@ def main():
                 col_a, col_b, col_c, col_d = st.columns(4)
                 
                 with col_a:
-                    st.markdown("### 🔥 2 SỐ")
-                    st.markdown(f"# `{best_2so['cặp_số']}`")
-                    st.caption(f"Điểm AI: {best_2so['điểm_AI']}%")
+                    st.markdown("### 🔥 2 NUMBERS")
+                    st.markdown(f"# `{best_2so['pair']}`")
+                    st.caption(f"AI: {best_2so['ai_score']}%")
                 
                 with col_b:
-                    st.markdown("### 🔥 3 SỐ")
-                    st.markdown(f"# `{best_3so['bộ_số']}`")
-                    st.caption(f"Điểm AI: {best_3so['điểm_AI']}%")
+                    st.markdown("### 🔥 3 NUMBERS")
+                    st.markdown(f"# `{best_3so['trio']}`")
+                    st.caption(f"AI: {best_3so['ai_score']}%")
                 
                 with col_c:
                     st.markdown("### 🎲 TÀI/XỈU")
                     st.markdown(f"# `{tx_analysis['prediction']}`")
-                    st.caption(f"Độ tin cậy: {tx_analysis['confidence']}%")
+                    st.caption(f"Confidence: {tx_analysis['confidence']}%")
                 
                 with col_d:
                     st.markdown("### 🎲 LẺ/CHẴN")
                     st.markdown(f"# `{lc_analysis['prediction']}`")
-                    st.caption(f"Độ tin cậy: {lc_analysis['confidence']}%")
+                    st.caption(f"Confidence: {lc_analysis['confidence']}%")
                 
                 st.markdown("---")
-                st.caption("✅ Dựa trên phân tích AI từ dữ liệu lịch sử")
+                st.caption("✅ Based on AI analysis of historical data")
             else:
-                st.info("🔄 Đang phân tích dữ liệu...")
+                st.info("🔄 Analyzing data...")
         else:
-            st.info("📥 Vui lòng nhập dữ liệu trước")
+            st.info("📥 Please input data first")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ================= TAB 2: PHÂN TÍCH =================
+    # ================= TAB 2: ANALYSIS =================
     with tabs[1]:
-        st.subheader("🎯 PHÂN TÍCH CHI TIẾT")
+        st.subheader("🎯 DETAILED ANALYSIS")
         
         if not df.empty:
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("#### 📊 TOP 5 CẶP 2 SỐ")
+                st.markdown("#### 📊 TOP 5 - 2 NUMBERS")
                 analyzer = LottoAIAnalyzer(df)
                 results_2so = analyzer.analyze_2so_5tinh()[:5]
                 
                 if results_2so:
                     for i, result in enumerate(results_2so, 1):
-                        icon, color = get_trend_icon(result["xu_hướng"])
                         cols = st.columns([1, 3, 2])
                         with cols[0]:
                             st.markdown(f"**{i}.**")
                         with cols[1]:
-                            st.markdown(f'<span style="color:{color};font-size:20px">{icon}</span> **`{result["cặp_số"]}`**', unsafe_allow_html=True)
+                            st.markdown(f"**`{result['pair']}`**")
                         with cols[2]:
-                            st.markdown(f"{result['điểm_AI']}%")
+                            st.markdown(f"{result['ai_score']}%")
                 
                 st.markdown("---")
                 st.markdown("#### 🎯 TIỀN NHỊ")
@@ -575,19 +564,18 @@ def main():
                     st.dataframe(recent_tn, use_container_width=True)
             
             with col2:
-                st.markdown("#### 📊 TOP 5 BỘ 3 SỐ")
+                st.markdown("#### 📊 TOP 5 - 3 NUMBERS")
                 results_3so = analyzer.analyze_3so_5tinh()[:5]
                 
                 if results_3so:
                     for i, result in enumerate(results_3so, 1):
-                        icon, color = get_trend_icon(result["xu_hướng"])
                         cols = st.columns([1, 3, 2])
                         with cols[0]:
                             st.markdown(f"**{i}.**")
                         with cols[1]:
-                            st.markdown(f'<span style="color:{color};font-size:20px">{icon}</span> **`{result["bộ_số"]}`**', unsafe_allow_html=True)
+                            st.markdown(f"**`{result['trio']}`**")
                         with cols[2]:
-                            st.markdown(f"{result['điểm_AI']}%")
+                            st.markdown(f"{result['ai_score']}%")
                 
                 st.markdown("---")
                 st.markdown("#### 🎯 HẬU NHỊ")
@@ -595,11 +583,11 @@ def main():
                     recent_hn = df.head(10)[["ky", "hau_nhi"]]
                     st.dataframe(recent_hn, use_container_width=True)
         else:
-            st.info("📥 Vui lòng nhập dữ liệu trước")
+            st.info("📥 Please input data first")
     
-    # ================= TAB 3: QUẢN LÝ VỐN =================
+    # ================= TAB 3: CAPITAL MANAGEMENT =================
     with tabs[2]:
-        st.subheader("💰 QUẢN LÝ VỐN THÔNG MINH")
+        st.subheader("💰 CAPITAL MANAGEMENT")
         
         # Load settings
         conn = get_conn()
@@ -613,7 +601,7 @@ def main():
             
             with col1:
                 tong_von = st.number_input(
-                    "💰 TỔNG VỐN (VNĐ)",
+                    "💰 TOTAL CAPITAL (VNĐ)",
                     min_value=100000,
                     value=int(current["tong_von"]),
                     step=100000
@@ -621,13 +609,13 @@ def main():
             
             with col2:
                 rui_ro = st.slider(
-                    "📉 RỦI RO / KỲ (%)",
+                    "📉 RISK PER GAME (%)",
                     min_value=1,
                     max_value=20,
                     value=int(current["phan_tram_rui_ro"])
                 )
             
-            if st.button("🎯 TÍNH PHÂN BỔ", type="primary"):
+            if st.button("🎯 CALCULATE DISTRIBUTION", type="primary"):
                 if not df.empty:
                     analyzer = LottoAIAnalyzer(df)
                     results_2so = analyzer.analyze_2so_5tinh()
@@ -637,35 +625,35 @@ def main():
                         best_2so = results_2so[0]
                         best_3so = results_3so[0]
                         
-                        tien_toi_da = tong_von * (rui_ro / 100)
-                        diem_tong = best_2so['điểm_AI'] + best_3so['điểm_AI']
+                        max_bet = tong_von * (rui_ro / 100)
+                        total_score = best_2so['ai_score'] + best_3so['ai_score']
                         
-                        if diem_tong > 0:
-                            tien_2so = (best_2so['điểm_AI'] / diem_tong) * tien_toi_da
-                            tien_3so = (best_3so['điểm_AI'] / diem_tong) * tien_toi_da
+                        if total_score > 0:
+                            bet_2so = (best_2so['ai_score'] / total_score) * max_bet
+                            bet_3so = (best_3so['ai_score'] / total_score) * max_bet
                             
                             st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                            st.markdown("### 📊 PHÂN BỔ VỐN")
+                            st.markdown("### 📊 BET DISTRIBUTION")
                             
                             col_a, col_b, col_c = st.columns(3)
                             
                             with col_a:
-                                st.metric("TỔNG CƯỢC", format_tien(tien_toi_da))
+                                st.metric("TOTAL BET", format_tien(max_bet))
                             
                             with col_b:
-                                st.metric("2 SỐ", format_tien(tien_2so))
+                                st.metric("2 NUMBERS", format_tien(bet_2so))
                             
                             with col_c:
-                                st.metric("3 SỐ", format_tien(tien_3so))
+                                st.metric("3 NUMBERS", format_tien(bet_3so))
                             
                             st.markdown("---")
-                            st.markdown(f"**2 Số `{best_2so['cặp_số']}`:** {format_tien(tien_2so)} ({best_2so['điểm_AI']:.1f}%)")
-                            st.markdown(f"**3 Số `{best_3so['bộ_số']}`:** {format_tien(tien_3so)} ({best_3so['điểm_AI']:.1f}%)")
+                            st.markdown(f"**2 Numbers `{best_2so['pair']}`:** {format_tien(bet_2so)} ({best_2so['ai_score']:.1f}%)")
+                            st.markdown(f"**3 Numbers `{best_3so['trio']}`:** {format_tien(bet_3so)} ({best_3so['ai_score']:.1f}%)")
                             
                             st.markdown('</div>', unsafe_allow_html=True)
                             
-                            # Lưu cài đặt
-                            if st.button("💾 LƯU CÀI ĐẶT"):
+                            # Save settings
+                            if st.button("💾 SAVE SETTINGS"):
                                 conn = get_conn()
                                 c = conn.cursor()
                                 c.execute("""
@@ -675,66 +663,66 @@ def main():
                                 """, (tong_von, rui_ro))
                                 conn.commit()
                                 conn.close()
-                                st.success("✅ Đã lưu!")
+                                st.success("✅ Saved!")
                     else:
-                        st.warning("Chưa đủ dữ liệu phân tích")
+                        st.warning("Not enough data for analysis")
                 else:
-                    st.info("Vui lòng nhập dữ liệu trước")
+                    st.info("Please input data first")
     
-    # ================= TAB 4: NHẬP DỮ LIỆU =================
+    # ================= TAB 4: DATA INPUT =================
     with tabs[3]:
-        st.subheader("📥 NHẬP DỮ LIỆU")
+        st.subheader("📥 DATA INPUT")
         
         col1, col2 = st.columns([2, 1])
         
         with col1:
             raw = st.text_area(
-                "Dán kết quả (mỗi dòng 1 số hoặc nhiều số cách nhau):",
+                "Paste results (one number per line or multiple numbers per line):",
                 height=200,
                 placeholder="""12345
 67890
 54321
 
-Hoặc: 12345 67890 54321
+Or: 12345 67890 54321
 
-Hoặc: 2 tinh: 5264 3 tinh: 5289
+Or: 2 tinh: 5264 3 tinh: 5289
 """
             )
         
         with col2:
-            st.markdown("#### 📁 TỪ FILE")
+            st.markdown("#### 📁 FROM FILE")
             uploaded = st.file_uploader("TXT/CSV", type=['txt', 'csv'])
             
             if uploaded:
                 content = uploaded.getvalue().decode()
-                st.text_area("Nội dung:", content, height=150, disabled=True)
+                st.text_area("Content:", content, height=150, disabled=True)
                 
-                if st.button("📥 NHẬP FILE"):
+                if st.button("📥 IMPORT FILE"):
                     nums = smart_parse_input(content)
                     added = save_ky_quay(nums)
-                    st.success(f"✅ Đã thêm {added} kỳ")
+                    st.success(f"✅ Added {added} games")
         
         if raw:
             nums = smart_parse_input(raw)
             
             if nums:
-                st.markdown(f"**Tìm thấy {len(nums)} số:**")
+                st.markdown(f"**Found {len(nums)} numbers:**")
                 st.markdown('<div class="data-format">', unsafe_allow_html=True)
                 for num in nums[:10]:
                     st.text(f"• {num}")
                 if len(nums) > 10:
-                    st.text(f"... và {len(nums)-10} số khác")
+                    st.text(f"... and {len(nums)-10} more")
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-                if st.button("💾 LƯU VÀO DB", type="primary"):
+                if st.button("💾 SAVE TO DB", type="primary"):
                     added = save_ky_quay(nums)
-                    st.success(f"✅ Đã lưu {added} kỳ mới!")
+                    st.success(f"✅ Saved {added} new games!")
                     time.sleep(1)
                     st.rerun()
         
-        # Hiển thị dữ liệu hiện có
+        # Show current data
         st.markdown("---")
-        st.subheader("📊 DỮ LIỆU HIỆN CÓ")
+        st.subheader("📊 CURRENT DATA")
         
         if not df.empty:
             st.dataframe(
@@ -742,13 +730,13 @@ Hoặc: 2 tinh: 5264 3 tinh: 5289
                 use_container_width=True,
                 height=300
             )
-            st.caption(f"Hiển thị 20/{len(df)} kỳ gần nhất")
+            st.caption(f"Showing 20/{len(df)} recent games")
         else:
-            st.info("📭 Chưa có dữ liệu")
+            st.info("📭 No data yet")
     
-    # ================= TAB 5: CÀI ĐẶT =================
+    # ================= TAB 5: SETTINGS =================
     with tabs[4]:
-        st.subheader("⚙️ CÀI ĐẶT HỆ THỐNG")
+        st.subheader("⚙️ SYSTEM SETTINGS")
         
         conn = get_conn()
         settings = pd.read_sql("SELECT * FROM cai_dat WHERE id = 1", conn)
@@ -760,46 +748,46 @@ Hoặc: 2 tinh: 5264 3 tinh: 5289
             col1, col2 = st.columns(2)
             
             with col1:
-                chuoi_thua = st.number_input(
-                    "Chuỗi thua cảnh báo:",
+                losing_streak = st.number_input(
+                    "Losing streak alert:",
                     min_value=1,
                     max_value=20,
                     value=int(s["chuoi_thua_toi_da"])
                 )
             
             with col2:
-                lo_toi_da = st.slider(
-                    "Lỗ tối đa/ngày (%):",
+                max_loss = st.slider(
+                    "Max daily loss (%):",
                     min_value=10,
                     max_value=50,
                     value=int(s["phan_tram_lo_toi_da"])
                 )
             
-            if st.button("💾 LƯU CÀI ĐẶT", type="primary"):
+            if st.button("💾 SAVE SETTINGS", type="primary"):
                 conn = get_conn()
                 c = conn.cursor()
                 c.execute("""
                 UPDATE cai_dat 
                 SET chuoi_thua_toi_da = ?, phan_tram_lo_toi_da = ?
                 WHERE id = 1
-                """, (chuoi_thua, lo_toi_da))
+                """, (losing_streak, max_loss))
                 conn.commit()
                 conn.close()
-                st.success("✅ Đã lưu cài đặt!")
+                st.success("✅ Settings saved!")
             
             st.markdown("---")
-            st.markdown("#### ⚠️ CẢNH BÁO AN TOÀN")
+            st.markdown("#### ⚠️ SAFETY WARNINGS")
             st.markdown("""
-            - **Dừng ngay** khi thua 5 kỳ liên tiếp
-            - **Không đánh** quá 5% vốn/kỳ
-            - **Nghỉ ngơi** khi lỗ 20% trong ngày
-            - **Tool chỉ hỗ trợ**, quyết định cuối cùng là của bạn
+            - **Stop immediately** after 5 consecutive losses
+            - **Do not bet** more than 5% of capital per game
+            - **Take a break** when losing 20% in a day
+            - **Tool is for support only**, final decision is yours
             """)
             
             st.markdown('<div style="background-color:#E3F2FD;padding:20px;border-radius:10px">', unsafe_allow_html=True)
-            st.markdown("### 🧠 **KỶ LUẬT LÀ CHÌA KHÓA - DỪNG LẠI ĐÚNG LÚC**")
+            st.markdown("### 🧠 **DISCIPLINE IS KEY - KNOW WHEN TO STOP**")
             st.markdown('</div>', unsafe_allow_html=True)
 
-# ================= RUN =================
+# ================= RUN APP =================
 if __name__ == "__main__":
     main()
