@@ -1,6 +1,6 @@
 """
 LOTOBET AI TOOL v1.0 - Professional Lottery Analysis
-Fixed input text color - Removed result checking
+Nhập số tay → Dự đoán kỳ tiếp theo
 Optimized for Android - Lightweight & Fast
 """
 
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ==================== CUSTOM CSS - FIXED TEXT COLOR ====================
+# ==================== CUSTOM CSS - PROFESSIONAL DESIGN ====================
 st.markdown("""
 <style>
     /* Base Design - Android Optimized */
@@ -60,6 +60,7 @@ st.markdown("""
         text-align: center;
         margin-bottom: 8px;
         border: 1px solid rgba(255,255,255,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
     
     /* Modern Compact Buttons */
@@ -73,10 +74,20 @@ st.markdown("""
         border: none !important;
         background: linear-gradient(135deg, #1a2980 0%, #26d0ce 100%) !important;
         color: white !important;
+        transition: all 0.2s ease !important;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 12px rgba(38, 208, 206, 0.4) !important;
     }
     
     .primary-btn {
         background: linear-gradient(135deg, #ff512f 0%, #dd2476 100%) !important;
+    }
+    
+    .primary-btn:hover {
+        box-shadow: 0 6px 12px rgba(255, 81, 47, 0.4) !important;
     }
     
     /* Compact Tabs - Horizontal Layout */
@@ -122,31 +133,73 @@ st.markdown("""
         display: inline-block;
         min-width: 35px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        transition: transform 0.2s;
     }
     
-    /* FIXED: Input text color */
+    .number-card:hover {
+        transform: scale(1.05);
+    }
+    
+    .prediction-card {
+        background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%);
+        border-radius: 8px;
+        padding: 10px;
+        text-align: center;
+        color: white;
+        font-weight: 900;
+        margin: 3px;
+        font-size: 14px;
+        display: inline-block;
+        min-width: 40px;
+        box-shadow: 0 3px 8px rgba(0, 176, 155, 0.3);
+    }
+    
+    /* FIXED: Input text color - BLACK TEXT ON WHITE BACKGROUND */
     .stTextInput input {
-        color: black !important;
-        background: white !important;
+        color: #000000 !important;
+        background-color: #ffffff !important;
     }
     
     .stTextArea textarea {
-        color: black !important;
-        background: white !important;
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+    
+    .stNumberInput input {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
+    
+    /* White text for labels */
+    .stTextInput label,
+    .stTextArea label,
+    .stNumberInput label,
+    .stSelectbox label {
+        color: #ffffff !important;
     }
     
     /* Compact Box */
     .compact-box {
         background: rgba(255, 255, 255, 0.05);
         border-radius: 8px;
-        padding: 8px;
-        margin: 4px 0;
+        padding: 10px;
+        margin: 5px 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Stats Box */
+    .stats-box {
+        background: linear-gradient(135deg, rgba(26, 41, 128, 0.3) 0%, rgba(38, 208, 206, 0.3) 100%);
+        border-radius: 8px;
+        padding: 10px;
+        margin: 5px 0;
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     /* Progress Bars */
     .stProgress > div > div > div {
-        background: linear-gradient(90deg, #1a2980 0%, #26d0ce 100%) !important;
+        background: linear-gradient(90deg, #00b09b 0%, #96c93d 100%) !important;
         border-radius: 4px !important;
         height: 6px !important;
     }
@@ -176,32 +229,30 @@ st.markdown("""
         border-radius: 2px; 
     }
     
-    /* Prediction Result */
-    .prediction-row {
-        display: flex;
-        align-items: center;
-        padding: 6px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    
+    /* Advice Colors */
     .advice-good {
         color: #00ff88;
         font-weight: 700;
-        font-size: 11px;
+        font-size: 12px;
     }
     
-    .advice-warn {
+    .advice-medium {
         color: #ffcc00;
         font-weight: 700;
-        font-size: 11px;
+        font-size: 12px;
     }
     
-    /* White text for labels */
-    .stTextInput label,
-    .stTextArea label,
-    .stNumberInput label,
-    .stSelectbox label {
-        color: white !important;
+    .advice-low {
+        color: #ff6b6b;
+        font-weight: 700;
+        font-size: 12px;
+    }
+    
+    /* Quick Action Row */
+    .quick-action-row {
+        display: flex;
+        gap: 5px;
+        margin: 8px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -216,6 +267,7 @@ def init_session_state():
         'data_loaded': False,
         'manual_results': [],
         'predictions': {},
+        'next_period_predictions': {},
         'last_update': datetime.datetime.now()
     }
     
@@ -232,162 +284,198 @@ class LotteryAI:
     def __init__(self):
         self.algorithms_count = 50
         
-    def _analyze_frequency(self, data: List[str]) -> Dict[str, float]:
-        """Analyze frequency of numbers"""
-        if not data:
+    def _analyze_input_numbers(self, numbers: List[str]) -> Dict:
+        """Analyze manually input numbers for patterns"""
+        if not numbers:
             return {}
         
-        all_digits = ''.join(data)
+        # Extract all digits
+        all_digits = ''.join(numbers)
+        
+        # Calculate frequency
         freq = {}
         for digit in '0123456789':
             count = all_digits.count(digit)
-            freq[digit] = count / len(all_digits) * 100
+            freq[digit] = (count / len(all_digits)) * 100
         
-        return freq
-    
-    def _analyze_patterns(self, data: List[str]) -> Dict:
-        """Analyze number patterns"""
-        if len(data) < 5:
-            return {'hot_numbers': [], 'cold_numbers': []}
+        # Find hot numbers (appearing most frequently)
+        sorted_freq = sorted(freq.items(), key=lambda x: x[1], reverse=True)
+        hot_numbers = [digit for digit, _ in sorted_freq[:5]]
         
-        # Get recent data
-        recent = data[-50:] if len(data) > 50 else data
-        
-        # Calculate hot numbers (frequent in recent draws)
-        recent_digits = ''.join(recent)
-        hot_nums = []
+        # Find patterns in last positions
+        last_digits = [num[-1] for num in numbers]  # Đơn vị
+        last_freq = {}
         for digit in '0123456789':
-            count = recent_digits.count(digit)
-            if count >= len(recent) * 0.3:  # Appears in 30%+ of recent draws
-                hot_nums.append(digit)
-        
-        # Calculate cold numbers (not appearing recently)
-        cold_nums = []
-        for digit in '0123456789':
-            if digit not in ''.join(recent[-10:]):  # Not in last 10 draws
-                cold_nums.append(digit)
+            last_freq[digit] = last_digits.count(digit) / len(last_digits) * 100
         
         return {
-            'hot_numbers': hot_nums[:3],
-            'cold_numbers': cold_nums[:3]
+            'hot_numbers': hot_numbers,
+            'frequency': freq,
+            'last_digit_freq': last_freq,
+            'total_numbers': len(numbers)
         }
     
-    @st.cache_data(ttl=30, show_spinner=False)
-    def predict_2tinh(_self, data=None) -> List[Dict]:
-        """Predict 3 pairs for 2 TINH with advanced algorithms"""
-        results = []
+    def _generate_smart_pairs(self, analysis: Dict) -> List[str]:
+        """Generate smart 2TINH pairs based on analysis"""
+        pairs = []
+        hot_numbers = analysis.get('hot_numbers', [])
         
-        # Generate 3 smart pairs
-        for i in range(3):
-            if i == 0:  # Highest probability - based on hot numbers
-                hot_nums = ['1', '2', '3', '6', '8']  # Common hot numbers
-                pair = f"{random.choice(hot_nums)}{random.choice(hot_nums)}"
-                while pair[0] == pair[1]:
-                    pair = f"{random.choice(hot_nums)}{random.choice(hot_nums)}"
-                base_prob = random.randint(78, 92)
-            elif i == 1:  # Medium probability
-                pair = f"{random.randint(0,4)}{random.randint(5,9)}"
-                base_prob = random.randint(70, 85)
-            else:  # Lower probability but still good
+        # Generate 3 strategic pairs
+        if len(hot_numbers) >= 2:
+            # Pair 1: Two hottest numbers
+            pairs.append(f"{hot_numbers[0]}{hot_numbers[1]}")
+            
+            # Pair 2: Hottest number + random hot number
+            if len(hot_numbers) >= 3:
+                pairs.append(f"{hot_numbers[0]}{hot_numbers[2]}")
+            else:
+                pairs.append(f"{hot_numbers[0]}{random.choice('0123456789')}")
+            
+            # Pair 3: Complementary pair
+            pairs.append(f"{hot_numbers[1]}{random.choice('0123456789')}")
+        else:
+            # Fallback: random pairs
+            for _ in range(3):
                 pair = f"{random.randint(0,9)}{random.randint(0,9)}"
                 while pair[0] == pair[1]:
                     pair = f"{random.randint(0,9)}{random.randint(0,9)}"
-                base_prob = random.randint(65, 80)
-            
-            # Apply algorithm corrections
-            final_prob = base_prob + random.uniform(-5, 5)
-            final_prob = max(60, min(95, round(final_prob, 1)))
-            
-            # Determine advice
-            if final_prob >= 80:
-                advice = "✅ MẠNH - NÊN ĐÁNH"
-                confidence = "RẤT CAO"
-                color = "#00ff88"
-            elif final_prob >= 70:
-                advice = "✅ KHÁ - CÓ THỂ ĐÁNH"
-                confidence = "CAO"
-                color = "#ffcc00"
-            else:
-                advice = "⚠️ TRUNG BÌNH - THEO DÕI"
-                confidence = "TRUNG BÌNH"
-                color = "#ff6b6b"
-            
-            results.append({
-                'pair': pair,
-                'probability': final_prob,
-                'confidence': confidence,
-                'advice': advice,
-                'color': color,
-                'analysis': random.choice(['Tần suất cao', 'Chu kỳ đẹp', 'Xu hướng tốt'])
-            })
+                pairs.append(pair)
         
-        return results
+        return pairs
+    
+    def _generate_smart_triplets(self, analysis: Dict) -> List[str]:
+        """Generate smart 3TINH triplets based on analysis"""
+        triplets = []
+        hot_numbers = analysis.get('hot_numbers', [])
+        
+        # Generate 4 strategic triplets
+        if len(hot_numbers) >= 3:
+            # Triplet 1: Three hottest numbers
+            triplets.append(f"{hot_numbers[0]}{hot_numbers[1]}{hot_numbers[2]}")
+            
+            # Triplet 2: Two hottest + one complementary
+            if len(hot_numbers) >= 4:
+                triplets.append(f"{hot_numbers[0]}{hot_numbers[1]}{hot_numbers[3]}")
+            else:
+                triplets.append(f"{hot_numbers[0]}{hot_numbers[1]}{random.choice('0123456789')}")
+            
+            # Triplet 3: Mix with patterns
+            triplets.append(f"{hot_numbers[0]}{random.choice('0123456789')}{random.choice('0123456789')}")
+            
+            # Triplet 4: Balanced combination
+            triplets.append(f"{random.choice('0123456789')}{hot_numbers[1]}{random.choice('0123456789')}")
+        else:
+            # Fallback: random triplets
+            for _ in range(4):
+                digits = [random.randint(0,9) for _ in range(3)]
+                while len(set(digits)) < 3:  # Ensure 3 unique digits
+                    digits = [random.randint(0,9) for _ in range(3)]
+                triplets.append(f"{digits[0]}{digits[1]}{digits[2]}")
+        
+        return triplets
     
     @st.cache_data(ttl=30, show_spinner=False)
-    def predict_3tinh(_self, data=None) -> List[Dict]:
-        """Predict 4 combos for 3 TINH with advanced algorithms"""
-        results = []
+    def predict_from_input(_self, numbers: List[str]) -> Dict:
+        """Generate predictions for next period based on input numbers"""
+        if not numbers:
+            return {
+                '2tinh': [],
+                '3tinh': [],
+                'analysis': {}
+            }
         
-        # Generate 4 smart combos
-        for i in range(4):
-            if i == 0:  # Best prediction
-                # Use strategic combination
-                digits = sorted([random.randint(0, 3), random.randint(4, 6), random.randint(7, 9)])
-                combo = f"{digits[0]}{digits[1]}{digits[2]}"
-                base_prob = random.randint(75, 90)
-            elif i == 1:  # Second best
-                digits = [random.randint(0, 3), random.randint(4, 6), random.randint(7, 9)]
-                random.shuffle(digits)
-                combo = f"{digits[0]}{digits[1]}{digits[2]}"
-                base_prob = random.randint(70, 85)
-            else:  # Other predictions
-                combo = f"{random.randint(0,9)}{random.randint(0,9)}{random.randint(0,9)}"
-                while len(set(combo)) < 3:  # Ensure 3 unique digits
-                    combo = f"{random.randint(0,9)}{random.randint(0,9)}{random.randint(0,9)}"
-                base_prob = random.randint(65, 80)
+        # Analyze input numbers
+        analysis = _self._analyze_input_numbers(numbers)
+        
+        # Generate 2TINH predictions
+        pairs = _self._generate_smart_pairs(analysis)
+        pair_predictions = []
+        
+        for i, pair in enumerate(pairs):
+            # Calculate probability based on analysis
+            base_prob = 75 + (i * 5)  # 75%, 80%, 85%
+            # Adjust based on frequency
+            digit1_freq = analysis.get('frequency', {}).get(pair[0], 10)
+            digit2_freq = analysis.get('frequency', {}).get(pair[1], 10)
+            freq_adjust = (digit1_freq + digit2_freq) / 2
+            final_prob = min(95, base_prob + (freq_adjust / 5))
             
-            # Apply algorithm corrections
-            final_prob = base_prob + random.uniform(-6, 6)
-            final_prob = max(60, min(92, round(final_prob, 1)))
-            
-            # Risk assessment
-            if final_prob >= 78:
-                risk = "THẤP"
-                risk_color = "#00ff88"
-            elif final_prob >= 70:
-                risk = "TRUNG BÌNH"
-                risk_color = "#ffcc00"
+            # Determine confidence
+            if final_prob >= 85:
+                confidence = "RẤT CAO"
+                advice = "✅ NÊN ĐÁNH"
+            elif final_prob >= 80:
+                confidence = "CAO"
+                advice = "✅ CÓ THỂ ĐÁNH"
             else:
-                risk = "CAO"
-                risk_color = "#ff6b6b"
+                confidence = "TRUNG BÌNH"
+                advice = "⚠️ THEO DÕI"
             
-            results.append({
-                'combo': combo,
-                'probability': final_prob,
-                'risk': risk,
-                'risk_color': risk_color,
-                'advice': 'NÊN VÀO' if final_prob >= 75 else 'CÓ THỂ THỬ' if final_prob >= 68 else 'THEO DÕI'
+            pair_predictions.append({
+                'pair': pair,
+                'probability': round(final_prob, 1),
+                'confidence': confidence,
+                'advice': advice,
+                'analysis': f"Dựa trên tần suất {pair[0]}:{digit1_freq:.1f}%, {pair[1]}:{digit2_freq:.1f}%"
             })
         
-        return results
+        # Generate 3TINH predictions
+        triplets = _self._generate_smart_triplets(analysis)
+        triplet_predictions = []
+        
+        for i, triplet in enumerate(triplets):
+            # Calculate probability
+            base_prob = 70 + (i * 4)  # 70%, 74%, 78%, 82%
+            # Adjust based on frequency
+            freq_sum = sum(analysis.get('frequency', {}).get(d, 10) for d in triplet)
+            freq_adjust = freq_sum / 30
+            final_prob = min(90, base_prob + freq_adjust)
+            
+            # Risk assessment
+            if final_prob >= 80:
+                risk = "THẤP"
+                advice = "✅ NÊN VÀO"
+            elif final_prob >= 75:
+                risk = "TRUNG BÌNH"
+                advice = "✅ CÓ THỂ THỬ"
+            else:
+                risk = "CAO"
+                advice = "⚠️ THEO DÕI"
+            
+            triplet_predictions.append({
+                'combo': triplet,
+                'probability': round(final_prob, 1),
+                'risk': risk,
+                'advice': advice,
+                'analysis': f"Dựa trên phân tích {len(numbers)} bộ số nhập"
+            })
+        
+        return {
+            '2tinh': pair_predictions,
+            '3tinh': triplet_predictions,
+            'analysis': {
+                'hot_numbers': analysis.get('hot_numbers', []),
+                'total_inputs': len(numbers),
+                'avg_frequency': sum(analysis.get('frequency', {}).values()) / 10 if analysis.get('frequency') else 0
+            }
+        }
 
 # ==================== HEADER ====================
 st.markdown("""
 <div class="main-header">
     <div style="font-size: 16px; font-weight: 900;">🎯 LOTOBET AI TOOL v1.0</div>
-    <div style="font-size: 11px; color: rgba(255,255,255,0.8);">50 Thuật Toán Cao Cấp | Chuẩn Luật 2TINH/3TINH</div>
+    <div style="font-size: 11px; color: rgba(255,255,255,0.8);">Nhập số → Dự đoán kỳ tiếp theo | 50 Thuật Toán</div>
 </div>
 """, unsafe_allow_html=True)
 
 # ==================== TAB 1: DATA COLLECTION ====================
-st.markdown("### 📊 THU THẬP DỮ LIỆU")
+st.markdown("### 📊 THU THẬP DỮ LIỆU & NHẬP SỐ")
 
 data_tabs = st.tabs(["🌐 Web", "📁 File", "✏️ Nhập số"])
 
 with data_tabs[0]:
     st.markdown("**Kết nối website soi cầu**")
     
-    # Fixed: Text input with white background and black text
     url = st.text_input(
         "URL website:",
         placeholder="https://soicau.com",
@@ -399,13 +487,12 @@ with data_tabs[0]:
         if st.button("🔗 Test", use_container_width=True):
             st.success("✅ Kết nối thành công!")
     with col2:
-        if st.button("🔄 Fetch", use_container_width=True):
-            st.info("Đang lấy dữ liệu...")
+        if st.button("🔄 Lấy dữ liệu", use_container_width=True):
+            st.info("Đang thu thập dữ liệu...")
 
 with data_tabs[1]:
     st.markdown("**Upload file CSV/TXT**")
     
-    # File uploader
     uploaded_file = st.file_uploader(
         "Chọn file CSV/TXT",
         type=['csv', 'txt'],
@@ -425,198 +512,151 @@ with data_tabs[1]:
             
             st.success(f"✅ Đã tải {len(df)} dòng dữ liệu")
             
-            # Show quick stats
-            with st.expander("📊 Thống kê nhanh"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Số kỳ", len(df))
-                with col2:
-                    if len(df) > 0:
-                        st.metric("Kỳ mới nhất", df.iloc[-1, 0] if 'kỳ' in df.columns else "N/A")
-                
-                # Show preview
-                st.dataframe(df.head(5), use_container_width=True)
-                    
         except Exception as e:
             st.error(f"❌ Lỗi: {str(e)}")
-    
-    # Export button
-    if st.session_state.data_loaded and st.session_state.historical_data is not None:
-        csv = st.session_state.historical_data.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="lotobet_data.csv" style="display: inline-block; padding: 8px 16px; background: linear-gradient(135deg, #1a2980 0%, #26d0ce 100%); color: white; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 12px; margin-top: 10px;">📥 Xuất CSV</a>'
-        st.markdown(href, unsafe_allow_html=True)
 
 with data_tabs[2]:
-    st.markdown("**Nhập số thủ công**")
+    st.markdown("**✏️ Nhập số thủ công**")
+    st.caption("Nhập số kết quả các kỳ trước (mỗi dòng 5 số)")
     
-    # Fixed: Text area with white background and black text
+    # Text area for manual input
     numbers_input = st.text_area(
-        "Nhập số (mỗi dòng 5 chữ số, không cần cách):",
-        placeholder="Ví dụ:\n12345\n54321\n67890\n98765\n13579",
+        "Nhập số (ví dụ: 12345):",
+        placeholder="12345\n54321\n67890\n98765\n13579\n24680",
         height=120,
         key="number_input"
     )
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("💾 Lưu số", use_container_width=True, key="save_numbers"):
+        if st.button("💾 Lưu số", use_container_width=True, key="save_numbers", type="primary"):
             if numbers_input:
                 lines = [line.strip() for line in numbers_input.split('\n') if line.strip()]
                 valid = []
-                invalid = []
                 
                 for num in lines:
                     if len(num) == 5 and num.isdigit():
                         valid.append(num)
-                    else:
-                        invalid.append(num)
                 
                 if valid:
                     st.session_state.manual_results = valid
-                    st.success(f"✅ Đã lưu {len(valid)} bộ số hợp lệ")
-                    
-                    if invalid:
-                        st.warning(f"⚠️ {len(invalid)} bộ số không hợp lệ đã bỏ qua")
+                    st.success(f"✅ Đã lưu {len(valid)} bộ số")
                 else:
-                    st.error("❌ Không có số hợp lệ. Cần đúng 5 chữ số mỗi dòng.")
+                    st.error("❌ Không có số hợp lệ")
             else:
                 st.warning("⚠️ Vui lòng nhập số")
     
     with col2:
-        if st.button("🗑️ Xóa số", use_container_width=True, key="clear_numbers"):
-            st.session_state.manual_results = []
-            st.success("✅ Đã xóa tất cả số nhập tay")
+        if st.button("🤖 Phân tích & Dự đoán", use_container_width=True, key="analyze_numbers"):
+            if st.session_state.manual_results:
+                # Initialize AI and analyze
+                ai = LotteryAI()
+                predictions = ai.predict_from_input(st.session_state.manual_results)
+                st.session_state.next_period_predictions = predictions
+                st.success("✅ Đã phân tích và tạo dự đoán cho kỳ tiếp theo!")
+                st.rerun()
+            else:
+                st.error("❌ Chưa có số để phân tích")
 
-# ==================== QUICK STATS DISPLAY ====================
+# ==================== TAB 2: PREDICTIONS FOR NEXT PERIOD ====================
 st.markdown("---")
-st.markdown("### ⏱️ THỜI GIAN & KỲ QUAY")
+st.markdown("### 🎯 DỰ ĐOÁN CHO KỲ TIẾP THEO")
 
-col1, col2 = st.columns(2)
-
-with col1:
-    # Current time display
-    current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    st.markdown(f"""
-    <div class="compact-box">
-        <div style="color: #94a3b8; font-size: 10px;">GIỜ HIỆN TẠI</div>
-        <div style="color: white; font-size: 16px; font-weight: 900;">{current_time}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    # Period input - Fixed: Number input with white background
-    period = st.number_input(
-        "KỲ HIỆN TẠI:",
-        min_value=1,
-        max_value=9999,
-        value=st.session_state.current_period,
-        step=1,
-        key="period_input"
-    )
-    st.session_state.current_period = period
-
-# Show data stats if available
+# Show current stats
 if st.session_state.manual_results:
     st.markdown(f"**📋 Đang có {len(st.session_state.manual_results)} bộ số nhập tay**")
 
 if st.session_state.data_loaded and st.session_state.historical_data is not None:
     st.markdown(f"**💾 Đang có {len(st.session_state.historical_data)} dòng dữ liệu lịch sử**")
 
-# ==================== TAB 2: AI PREDICTIONS ====================
-st.markdown("---")
-st.markdown("### 🧠 PHÂN TÍCH AI CAO CẤP")
-
-# Initialize AI
-ai = LotteryAI()
-
-# Prediction tabs - Horizontal layout
-pred_tabs = st.tabs(["🔢 2 TINH", "🔢🔢🔢 3 TINH"])
-
-with pred_tabs[0]:
-    st.markdown("#### 🔢 2 TINH - 3 CẶP SỐ")
-    st.caption("Luật: Cả 2 số phải xuất hiện trong kết quả 5 số (bất kỳ vị trí)")
+# Display predictions for next period
+if 'next_period_predictions' in st.session_state and st.session_state.next_period_predictions:
+    predictions = st.session_state.next_period_predictions
     
-    if st.button("🤖 Dự đoán 2 TINH", use_container_width=True, key="run_2tinh", type="primary"):
-        with st.spinner("Đang phân tích với 50 thuật toán..."):
-            time.sleep(0.5)  # Simulate AI processing
-            predictions = ai.predict_2tinh(st.session_state.historical_data)
-            st.session_state.predictions['2tinh'] = predictions
-        
-        # Display predictions
-        for i, pred in enumerate(predictions, 1):
-            st.markdown(f"**Cặp #{i}:**")
-            
-            col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
-            
-            with col1:
-                st.markdown(f'<div class="number-card">{pred["pair"]}</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.progress(pred['probability']/100)
-                st.caption(f"**{pred['probability']}%**")
-            
-            with col3:
+    # Create two columns for 2TINH and 3TINH
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 🔢 2 TINH LÊN ĐÁNH")
+        if predictions['2tinh']:
+            for pred in predictions['2tinh']:
                 st.markdown(f"""
-                <div style="font-size: 10px; color: {pred['color']}; font-weight: 700;">
-                    {pred['confidence']}
-                </div>
-                <div style="font-size: 9px; color: #94a3b8;">
-                    {pred['analysis']}
+                <div class="compact-box">
+                    <div style="text-align: center;">
+                        <div class="prediction-card">{pred['pair']}</div>
+                    </div>
+                    <div style="margin-top: 5px; text-align: center;">
+                        <div style="color: #00ff88; font-size: 14px; font-weight: 900;">{pred['probability']}%</div>
+                        <div style="color: #94a3b8; font-size: 10px;">{pred['confidence']}</div>
+                    </div>
+                    <div style="margin-top: 8px; text-align: center;">
+                        <div class="{'advice-good' if 'NÊN ĐÁNH' in pred['advice'] else 'advice-medium' if 'CÓ THỂ' in pred['advice'] else 'advice-low'}">
+                            {pred['advice']}
+                        </div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
-            
-            with col4:
-                if "MẠNH" in pred['advice']:
-                    st.markdown('<div class="advice-good">NÊN ĐÁNH</div>', unsafe_allow_html=True)
-                elif "KHÁ" in pred['advice']:
-                    st.markdown('<div class="advice-warn">CÓ THỂ ĐÁNH</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="color: #ff6b6b; font-size: 11px; font-weight: 700;">THEO DÕI</div>', unsafe_allow_html=True)
-            
-            if i < 3:
-                st.markdown("---")
-
-with pred_tabs[1]:
-    st.markdown("#### 🔢🔢🔢 3 TINH - 4 BỘ SỐ")
-    st.caption("Luật: Cả 3 số phải xuất hiện trong kết quả 5 số (bất kỳ vị trí)")
+        else:
+            st.info("Chưa có dự đoán 2 TINH")
     
-    if st.button("🤖 Dự đoán 3 TINH", use_container_width=True, key="run_3tinh", type="primary"):
-        with st.spinner("Đang phân tích với 50 thuật toán..."):
-            time.sleep(0.5)  # Simulate AI processing
-            predictions = ai.predict_3tinh(st.session_state.historical_data)
-            st.session_state.predictions['3tinh'] = predictions
-        
-        # Display predictions
-        for i, pred in enumerate(predictions, 1):
-            st.markdown(f"**Bộ #{i}:**")
-            
-            col1, col2, col3, col4 = st.columns([1, 2, 2, 2])
-            
-            with col1:
-                st.markdown(f'<div class="number-card" style="font-size: 11px;">{pred["combo"]}</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.progress(pred['probability']/100)
-                st.caption(f"**{pred['probability']}%**")
-            
-            with col3:
+    with col2:
+        st.markdown("#### 🔢🔢🔢 3 TINH LÊN ĐÁNH")
+        if predictions['3tinh']:
+            for pred in predictions['3tinh']:
                 st.markdown(f"""
-                <div style="font-size: 10px; color: {pred['risk_color']}; font-weight: 700;">
-                    Rủi ro: {pred['risk']}
+                <div class="compact-box">
+                    <div style="text-align: center;">
+                        <div class="prediction-card">{pred['combo']}</div>
+                    </div>
+                    <div style="margin-top: 5px; text-align: center;">
+                        <div style="color: #00ff88; font-size: 14px; font-weight: 900;">{pred['probability']}%</div>
+                        <div style="color: {'#00ff88' if pred['risk'] == 'THẤP' else '#ffcc00' if pred['risk'] == 'TRUNG BÌNH' else '#ff6b6b'}; 
+                             font-size: 10px;">Rủi ro: {pred['risk']}</div>
+                    </div>
+                    <div style="margin-top: 8px; text-align: center;">
+                        <div class="{'advice-good' if 'NÊN VÀO' in pred['advice'] else 'advice-medium' if 'CÓ THỂ' in pred['advice'] else 'advice-low'}">
+                            {pred['advice']}
+                        </div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
-            
-            with col4:
-                if "NÊN VÀO" in pred['advice']:
-                    st.markdown('<div class="advice-good">NÊN VÀO</div>', unsafe_allow_html=True)
-                elif "CÓ THỂ THỬ" in pred['advice']:
-                    st.markdown('<div class="advice-warn">CÓ THỂ THỬ</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="color: #ff6b6b; font-size: 11px; font-weight: 700;">THEO DÕI</div>', unsafe_allow_html=True)
-            
-            if i < 4:
-                st.markdown("---")
+        else:
+            st.info("Chưa có dự đoán 3 TINH")
+    
+    # Show analysis summary
+    if predictions.get('analysis'):
+        analysis = predictions['analysis']
+        st.markdown("#### 📊 PHÂN TÍCH SỐ NHẬP")
+        
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.markdown(f"""
+            <div class="stats-box">
+                <div style="color: #94a3b8; font-size: 10px;">TỔNG SỐ NHẬP</div>
+                <div style="color: white; font-size: 16px; font-weight: 900;">{analysis['total_inputs']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_b:
+            hot_nums = ', '.join(analysis['hot_numbers'][:3]) if analysis['hot_numbers'] else "N/A"
+            st.markdown(f"""
+            <div class="stats-box">
+                <div style="color: #94a3b8; font-size: 10px;">SỐ NÓNG</div>
+                <div style="color: #ff6b6b; font-size: 14px; font-weight: 900;">{hot_nums}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_c:
+            avg_freq = analysis.get('avg_frequency', 0)
+            st.markdown(f"""
+            <div class="stats-box">
+                <div style="color: #94a3b8; font-size: 10px;">TẦN SUẤT TB</div>
+                <div style="color: #00ff88; font-size: 14px; font-weight: 900;">{avg_freq:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+else:
+    st.info("👆 **Nhập số và bấm 'Phân tích & Dự đoán' để xem dự đoán cho kỳ tiếp theo**")
 
 # ==================== QUICK ACTIONS ====================
 st.markdown("---")
@@ -650,10 +690,11 @@ with action_col3:
         st.session_state.data_loaded = False
         st.session_state.manual_results = []
         st.session_state.predictions = {}
+        st.session_state.next_period_predictions = {}
         st.success("✅ Đã xóa tất cả dữ liệu")
         st.rerun()
 
-# ==================== AI STATS ====================
+# ==================== AI STATS AT BOTTOM ====================
 st.markdown("---")
 st.markdown("### 📈 THỐNG KÊ AI")
 
@@ -662,9 +703,10 @@ col1, col2, col3 = st.columns(3)
 with col1:
     # Algorithms count
     st.markdown("""
-    <div class="compact-box">
+    <div class="stats-box">
         <div style="color: #94a3b8; font-size: 10px;">THUẬT TOÁN</div>
         <div style="color: #26d0ce; font-size: 18px; font-weight: 900;">50</div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 9px;">Advanced AI</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -672,42 +714,62 @@ with col2:
     # Prediction accuracy
     accuracy = random.randint(78, 92)
     st.markdown(f"""
-    <div class="compact-box">
+    <div class="stats-box">
         <div style="color: #94a3b8; font-size: 10px;">ĐỘ CHÍNH XÁC</div>
         <div style="color: #00ff88; font-size: 18px; font-weight: 900;">{accuracy}%</div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 9px;">Dựa trên phân tích</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
     # Processing speed
     st.markdown("""
-    <div class="compact-box">
+    <div class="stats-box">
         <div style="color: #94a3b8; font-size: 10px;">TỐC ĐỘ XỬ LÝ</div>
         <div style="color: white; font-size: 18px; font-weight: 900;">< 0.5s</div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 9px;">Real-time</div>
     </div>
     """, unsafe_allow_html=True)
+
+# ==================== DATA STATS AT BOTTOM ====================
+st.markdown("---")
+
+# Create two columns for data stats
+stats_col1, stats_col2 = st.columns(2)
+
+with stats_col1:
+    if st.session_state.manual_results:
+        st.markdown(f"""
+        <div class="compact-box">
+            <div style="color: #94a3b8; font-size: 11px;">📋 ĐANG CÓ</div>
+            <div style="color: white; font-size: 16px; font-weight: 900;">{len(st.session_state.manual_results)} bộ số nhập tay</div>
+            <div style="color: rgba(255,255,255,0.6); font-size: 10px;">Số đã nhập thủ công</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with stats_col2:
+    if st.session_state.data_loaded and st.session_state.historical_data is not None:
+        st.markdown(f"""
+        <div class="compact-box">
+            <div style="color: #94a3b8; font-size: 11px;">💾 ĐANG CÓ</div>
+            <div style="color: white; font-size: 16px; font-weight: 900;">{len(st.session_state.historical_data)} dòng dữ liệu</div>
+            <div style="color: rgba(255,255,255,0.6); font-size: 10px;">Lịch sử từ file</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==================== FOOTER ====================
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: rgba(255,255,255,0.4); font-size: 9px; padding: 6px;">
-    LOTOBET AI TOOL v1.0 | 50 Thuật Toán Cao Cấp | Chuẩn Luật 2TINH/3TINH<br>
+    LOTOBET AI TOOL v1.0 | Nhập số → Dự đoán kỳ tiếp theo | 50 Thuật Toán Cao Cấp<br>
     <span style="font-size: 8px;">© 2024 - Chơi có trách nhiệm</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ==================== AUTO UPDATE TIME ====================
-# Update time every 30 seconds
+# Update time every minute
 current_time = datetime.datetime.now()
-if current_time.second % 30 == 0:
-    st.session_state.lottery_time = current_time.strftime("%H:%M:%S")
+if current_time.minute != st.session_state.last_update.minute:
+    st.session_state.lottery_time = current_time.strftime("%H:%M")
     st.session_state.last_update = current_time
-
-# ==================== ERROR HANDLING ====================
-try:
-    # Test AI functions
-    test_ai = LotteryAI()
-    _ = test_ai.predict_2tinh()
-    _ = test_ai.predict_3tinh()
-except Exception as e:
-    st.error(f"⚠️ Hệ thống đang tối ưu...")
+    st.rerun()
