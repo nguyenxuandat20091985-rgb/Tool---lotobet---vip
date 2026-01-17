@@ -1,89 +1,53 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import re
-from collections import Counter
 import datetime
 
-# --- CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="LOTOBET AI PRO v2.0", layout="wide")
+st.set_page_config(page_title="LOTOBET AI v2.0", layout="wide")
 
-st.markdown("""
-    <style>
-    .stApp { background-color: #0E1117; color: #E0E0E0; }
-    .main-card { background: linear-gradient(135deg, #1e1e2f 0%, #252540 100%); border-radius: 15px; padding: 20px; border: 1px solid #444; text-align: center; }
-    .stMetric { background-color: #161b22; border-radius: 10px; padding: 15px; border: 1px solid #30363d; }
-    .stButton>button { width: 100%; border-radius: 8px; background: #ff4b4b; color: white; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
+# Giao diện dán trực tiếp, không dùng SideBar để tránh lỗi cảm ứng
+st.title("🛡️ LOTOBET AI v2.0 - FIX CẢM ỨNG")
 
-class PremiumLotoEngine:
-    def __init__(self, data):
-        self.data = [[int(d) for d in list(s)] for s in data]
-        self.total = len(self.data)
+if 'raw_data' not in st.session_state: st.session_state.raw_data = []
+if 'history' not in st.session_state: st.session_state.history = []
 
-    def analyze_all(self):
-        results = []
-        for n in range(10):
-            f_score = (sum(1 for p in self.data if n in p) / self.total) * 100
-            gap = 0
-            for p in reversed(self.data):
-                if n in p: break
-                gap += 1
-            recent = sum(1 for p in self.data[-10:] if n in p) / 10 * 100
-            
-            # Công thức logic 7 tầng thu gọn
-            final_prob = (f_score * 0.25) + (recent * 0.45) + (min(gap * 6, 30))
-            
-            action = "CHỜ ĐỢI"
-            if final_prob > 75: action = "🔥 VÀO TIỀN"
-            elif final_prob > 60: action = "⚡ THEO NHẸ"
+# PHẦN 1: NHẬP DỮ LIỆU NGAY TẠI ĐÂY
+st.markdown("### 📥 BƯỚC 1: DÁN DỮ LIỆU VÀO ĐÂY")
+input_data = st.text_area("Dán 20-50 kỳ (5 số mỗi dòng) từ Ku:", height=150)
 
-            results.append({"SỐ": n, "XÁC SUẤT (%)": round(min(final_prob, 99.1), 1), "ĐỘ TRỄ (KỲ)": gap, "KHUYẾN NGHỊ": action})
-        return sorted(results, key=lambda x: x['XÁC SUẤT (%)'], reverse=True)
+if st.button("👉 BẮT ĐẦU PHÂN TÍCH"):
+    clean = re.findall(r'\b\d{5}\b', input_data)
+    if clean:
+        st.session_state.raw_data = clean
+    else:
+        st.error("Chưa tìm thấy dữ liệu 5 chữ số. Hãy kiểm tra lại!")
 
-def main():
-    st.title("🛡️ LOTOBET AI v2.0 - PREMIUM (No-Error)")
+# PHẦN 2: KẾT QUẢ PHÂN TÍCH
+if st.session_state.raw_data:
+    data_list = [[int(d) for d in list(s)] for s in st.session_state.raw_data]
     
-    if 'history' not in st.session_state: st.session_state.history = []
-    if 'raw_data' not in st.session_state: st.session_state.raw_data = []
-
-    with st.sidebar:
-        st.header("⚙️ DỮ LIỆU")
-        input_data = st.text_area("Dán kết quả Ku (5 số mỗi dòng):", height=300)
-        if st.button("PHÂN TÍCH NGAY"):
-            clean = re.findall(r'\b\d{5}\b', input_data)
-            if clean:
-                st.session_state.raw_data = clean
-                st.rerun()
-
-    if not st.session_state.raw_data:
-        st.info("👈 Dán dữ liệu vào bên trái để bắt đầu.")
-        return
-
-    engine = PremiumLotoEngine(st.session_state.raw_data)
-    analysis = engine.analyze_all()
+    # Tính toán nhanh số mạnh nhất
+    results = []
+    for n in range(10):
+        gap = 0
+        for p in reversed(data_list):
+            if n in p: break
+            gap += 1
+        recent = sum(1 for p in data_list[-10:] if n in p) / 10 * 100
+        score = (recent * 0.6) + (min(gap * 5, 40))
+        results.append({"SỐ": n, "XÁC SUẤT": round(score, 1), "ĐỘ TRỄ": gap})
+    
+    analysis = sorted(results, key=lambda x: x['XÁC SUẤT'], reverse=True)
     best = analysis[0]
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.markdown(f"""<div class="main-card"><h3>SỐ MẠNH NHẤT</h3><h1 style='color: #ff4b4b; font-size: 70px;'>{best['SỐ']}</h1><p>Độ tin cậy: {best['XÁC SUẤT (%)']}%</p></div>""", unsafe_allow_html=True)
-        
-        actual = st.text_input("Đối soát kỳ vừa về (5 số):")
-        if st.button("LƯU LỊCH SỬ"):
-            if len(actual) == 5:
-                win = str(best['SỐ']) in actual
-                st.session_state.history.insert(0, {"Giờ": datetime.datetime.now().strftime("%H:%M"), "Dự đoán": best['SỐ'], "Kết quả": actual, "Trạng thái": "✅ THẮNG" if win else "❌ THUA"})
-                st.rerun()
+    st.markdown("---")
+    st.markdown(f"""
+        <div style="background: #1e1e2f; padding: 20px; border-radius: 15px; text-align: center; border: 2px solid #ff4b4b;">
+            <h2 style="color: white;">SỐ MAY MẮN TIẾP THEO</h2>
+            <h1 style="color: #ff4b4b; font-size: 80px;">{best['SỐ']}</h1>
+            <p style="color: white;">Tỷ lệ nổ: {best['XÁC SUẤT']}%</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    with col2:
-        st.subheader("📊 CHI TIẾT 0-9")
-        st.table(pd.DataFrame(analysis))
-
-    if st.session_state.history:
-        st.markdown("---")
-        st.subheader("📜 NHẬT KÝ")
-        st.table(pd.DataFrame(st.session_state.history))
-
-if __name__ == "__main__":
-    main()
+    st.subheader("📊 Chi tiết 0-9")
+    st.table(pd.DataFrame(analysis))
