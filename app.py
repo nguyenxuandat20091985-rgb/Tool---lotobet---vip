@@ -1,19 +1,18 @@
 """
 LOTOBET ELITE v3.0 - Professional Lottery Analysis System
 Enhanced Version with Advanced Algorithms & Mobile Optimization
+NO PLOTLY VERSION - Lightweight & Fast
 Author: Senior Python Developer + Data Analyst
-Version: 3.0
+Version: 3.0 (No Dependencies)
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import re
+import math
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -79,6 +78,21 @@ st.markdown("""
     @keyframes pulse {
         from { opacity: 0.95; }
         to { opacity: 1; }
+    }
+    
+    /* Score Bars */
+    .score-bar {
+        height: 25px;
+        border-radius: 12px;
+        margin: 5px 0;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .score-fill {
+        height: 100%;
+        border-radius: 12px;
+        transition: width 1s ease-in-out;
     }
     
     /* Professional Table Styling */
@@ -203,7 +217,7 @@ class EliteAnalyzerV3:
         
         for idx, numbers in enumerate(self.data):
             for digit in digit_appearance:
-                digit_appearance[digit].append(1 if digit in numbers else 0)
+                digit_appearance[digit].append(1 if digit in str(numbers) else 0)
         
         for digit in digit_appearance:
             appearances = digit_appearance[digit]
@@ -226,7 +240,7 @@ class EliteAnalyzerV3:
             current_gap = 0
             
             for idx, numbers in enumerate(self.data):
-                if digit in numbers:
+                if digit in str(numbers):
                     if last_seen != -1:
                         gaps.append(idx - last_seen)
                     last_seen = idx
@@ -267,7 +281,7 @@ class EliteAnalyzerV3:
             for period_name, period in periods.items():
                 if len(self.data) >= period:
                     recent = self.data[-period:]
-                    trend_score = (sum(1 for nums in recent if digit in nums) / period) * 100
+                    trend_score = (sum(1 for nums in recent if digit in str(nums)) / period) * 100
                 else:
                     trend_score = 0
                 
@@ -278,8 +292,8 @@ class EliteAnalyzerV3:
                 last_5 = self.data[-5:] if len(self.data) >= 5 else self.data
                 prev_5 = self.data[-10:-5] if len(self.data) >= 10 else []
                 
-                trend_current = sum(1 for nums in last_5 if digit in nums) / len(last_5) if last_5 else 0
-                trend_previous = sum(1 for nums in prev_5 if digit in nums) / len(prev_5) if prev_5 else 0
+                trend_current = sum(1 for nums in last_5 if digit in str(nums)) / len(last_5) if last_5 else 0
+                trend_previous = sum(1 for nums in prev_5 if digit in str(nums)) / len(prev_5) if prev_5 else 0
                 
                 momentum = ((trend_current - trend_previous) / (trend_previous + 0.01)) * 100
             else:
@@ -294,7 +308,7 @@ class EliteAnalyzerV3:
             appearance_pattern = []
             
             for numbers in self.data:
-                appearance_pattern.append(1 if digit in numbers else 0)
+                appearance_pattern.append(1 if digit in str(numbers) else 0)
             
             # Detect cycles of length 2-7
             cycle_scores = {}
@@ -329,16 +343,18 @@ class EliteAnalyzerV3:
         cooccurrence_matrix = np.zeros((10, 10))
         
         for numbers in self.data:
-            digits_in_draw = [int(d) for d in str(numbers)]
-            for i in range(len(digits_in_draw)):
-                for j in range(i+1, len(digits_in_draw)):
-                    d1, d2 = digits_in_draw[i], digits_in_draw[j]
-                    cooccurrence_matrix[d1][d2] += 1
-                    cooccurrence_matrix[d2][d1] += 1
+            num_str = str(numbers)
+            if len(num_str) == 5:
+                digits_in_draw = [int(d) for d in num_str]
+                for i in range(len(digits_in_draw)):
+                    for j in range(i+1, len(digits_in_draw)):
+                        d1, d2 = digits_in_draw[i], digits_in_draw[j]
+                        cooccurrence_matrix[d1][d2] += 1
+                        cooccurrence_matrix[d2][d1] += 1
         
         for digit in self.analyzed_digits:
             d = int(digit)
-            cooccurrence_score = np.sum(cooccurrence_matrix[d]) / len(self.data) * 10
+            cooccurrence_score = np.sum(cooccurrence_matrix[d]) / len(self.data) * 10 if len(self.data) > 0 else 0
             self.analyzed_digits[digit]['cooccurrence_score'] = min(cooccurrence_score, 100)
     
     def layer_6_entropy_analysis(self):
@@ -347,9 +363,10 @@ class EliteAnalyzerV3:
         
         for numbers in self.data:
             num_str = str(numbers)
-            for pos, char in enumerate(num_str):
-                if char in position_distribution:
-                    position_distribution[char][pos] += 1
+            if len(num_str) == 5:
+                for pos, char in enumerate(num_str):
+                    if char in position_distribution:
+                        position_distribution[char][pos] += 1
         
         for digit in self.analyzed_digits:
             distribution = position_distribution.get(digit, [0]*5)
@@ -439,53 +456,45 @@ def parse_input_data(input_text):
     matches = re.findall(r'\b\d{5}\b', input_text)
     return matches
 
-def create_visualization(analysis_results, top_number):
-    """Create interactive visualization"""
-    digits = list(analysis_results.keys())
-    scores = [analysis_results[d]['final_score'] for d in digits]
+def create_score_bar(score, color="#00FFC2"):
+    """Create HTML score bar"""
+    return f"""
+    <div class="score-bar">
+        <div class="score-fill" style="width: {score}%; background: {color};"></div>
+    </div>
+    """
+
+def create_visualization_html(analysis_results, top_number):
+    """Create HTML visualization without Plotly"""
+    html = """
+    <div style='background: rgba(15, 20, 35, 0.9); border-radius: 15px; padding: 20px; margin: 20px 0;'>
+        <h4 style='color: #00FFC2; text-align: center; margin-bottom: 20px;'>📊 BIỂU ĐỒ ĐIỂM SỐ</h4>
+        <table style='width: 100%; border-collapse: collapse;'>
+    """
     
-    fig = go.Figure()
+    digits = list(range(10))
+    scores = [analysis_results[str(d)]['final_score'] for d in digits]
     
-    # Bar chart
-    colors = ['#FF3131' if str(i) == str(top_number) else 
-              '#00FFC2' if score >= 60 else 
-              '#FFD700' if score >= 45 else 
-              '#666666' 
-              for i, score in enumerate(scores)]
+    for digit, score in zip(digits, scores):
+        color = "#FF3131" if str(digit) == str(top_number) else "#00FFC2" if score >= 60 else "#FFD700" if score >= 45 else "#666666"
+        
+        html += f"""
+        <tr style='border-bottom: 1px solid rgba(255,255,255,0.1);'>
+            <td style='padding: 10px; width: 50px; text-align: center; color: {color}; font-weight: bold; font-size: 18px;'>{digit}</td>
+            <td style='padding: 10px; width: 60px; text-align: right; color: white;'>{score:.1f}%</td>
+            <td style='padding: 10px;'>
+                <div style='height: 20px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden;'>
+                    <div style='height: 100%; width: {score}%; background: {color}; border-radius: 10px;'></div>
+                </div>
+            </td>
+        </tr>
+        """
     
-    fig.add_trace(go.Bar(
-        x=digits,
-        y=scores,
-        marker_color=colors,
-        text=[f"{score:.1f}%" for score in scores],
-        textposition='auto',
-        name="Điểm số"
-    ))
-    
-    fig.update_layout(
-        title=dict(
-            text="<b>PHÂN TÍCH CHI TIẾT 0-9</b>",
-            font=dict(size=20, color='#FFFFFF', family='Orbitron')
-        ),
-        xaxis=dict(
-            title="SỐ",
-            tickfont=dict(size=14, color='#FFFFFF'),
-            titlefont=dict(size=16, color='#00FFC2')
-        ),
-        yaxis=dict(
-            title="ĐIỂM TỔNG HỢP (%)",
-            range=[0, 100],
-            tickfont=dict(size=12, color='#FFFFFF'),
-            titlefont=dict(size=16, color='#00FFC2')
-        ),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#FFFFFF'),
-        showlegend=False,
-        height=400
-    )
-    
-    return fig
+    html += """
+        </table>
+    </div>
+    """
+    return html
 
 def update_statistics(is_correct):
     """Update prediction statistics"""
@@ -642,8 +651,9 @@ def main():
         # Analysis Section
         if st.session_state.raw_data:
             # Run analysis
-            analyzer = EliteAnalyzerV3(st.session_state.raw_data)
-            analysis_results = analyzer.analyze_all()
+            with st.spinner("🔍 Đang phân tích dữ liệu với 7 tầng thuật toán..."):
+                analyzer = EliteAnalyzerV3(st.session_state.raw_data)
+                analysis_results = analyzer.analyze_all()
             
             if analysis_results:
                 # Find top number
@@ -674,7 +684,7 @@ def main():
                             <div style='background: rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 10px;'>
                                 <div style='font-size: 14px; color: #AAAAAA;'>
                                     📊 Dữ liệu: {len(st.session_state.raw_data)} số | 
-                                    ⏱️ Trễ: {top_info['gap_current']} kỳ |
+                                    ⏱️ Trễ: {int(top_info['gap_current'])} kỳ |
                                     📈 Tần suất: {top_info['frequency_total']:.1f}%
                                 </div>
                             </div>
@@ -690,7 +700,7 @@ def main():
                     table_data.append({
                         'SỐ': digit,
                         'ĐIỂM': f"{info['final_score']:.1f}%",
-                        'TRỄ': info['gap_current'],
+                        'TRỄ': int(info['gap_current']),
                         'TẦN SUẤT': f"{info['frequency_total']:.1f}%",
                         'XU HƯỚNG': f"{info['trend_short']:.1f}%",
                         'TÍN HIỆU': info['signal']
@@ -701,8 +711,33 @@ def main():
                 
                 # Visualization
                 st.markdown("### 📈 BIỂU ĐỒ PHÂN TÍCH")
-                fig = create_visualization(analysis_results, top_digit)
-                st.plotly_chart(fig, use_container_width=True)
+                st.markdown(create_visualization_html(analysis_results, top_digit), unsafe_allow_html=True)
+                
+                # Algorithm Details
+                with st.expander("🔬 CHI TIẾT 7 TẦNG THUẬT TOÁN"):
+                    cols = st.columns(3)
+                    algorithms = [
+                        ("🎯 Tần suất đa trọng số", "frequency_weighted"),
+                        ("⏱️ Phân tích độ trễ", "gap_score"),
+                        ("📈 Xu hướng ngắn hạn", "trend_short"),
+                        ("🔄 Nhận diện chu kỳ", "cycle_strength"),
+                        ("🔗 Đồng xuất hiện", "cooccurrence_score"),
+                        ("⚖️ Phân tích Entropy", "entropy_score"),
+                        ("🎚️ Xử lý nhiễu", "position_bias_score")
+                    ]
+                    
+                    for idx, (name, key) in enumerate(algorithms):
+                        col_idx = idx % 3
+                        with cols[col_idx]:
+                            if key in top_info:
+                                score = top_info[key]
+                                color = "#00FFC2" if score >= 50 else "#FFD700" if score >= 30 else "#FF3131"
+                                st.markdown(f"""
+                                    <div style='background: rgba(30, 35, 50, 0.8); border-radius: 10px; padding: 10px; margin-bottom: 10px;'>
+                                        <div style='color: {color}; font-size: 12px; font-weight: bold;'>{name}</div>
+                                        <div style='color: white; font-size: 16px; font-weight: bold; text-align: center;'>{score:.1f}%</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
                 
                 # Verification System
                 st.markdown("---")
@@ -777,6 +812,7 @@ def main():
         <div style='text-align: center; color: #666666; font-size: 12px; padding: 20px;'>
             <p>LOTOBET ELITE v3.0 | 7-Layer Algorithm System | Optimized for Mobile</p>
             <p>⚠️ Hệ thống phân tích hỗ trợ quyết định, không đảm bảo kết quả 100%</p>
+            <p>📱 Phiên bản nhẹ - Không cần Plotly - Chạy mượt trên mọi thiết bị</p>
         </div>
     """, unsafe_allow_html=True)
 
