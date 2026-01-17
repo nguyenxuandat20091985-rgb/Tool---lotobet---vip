@@ -1,14 +1,3 @@
-với bản cos này bạn rúp tôi bỏ rúp tôi dự đoán 2 tinh.
- - thay vào đấy các số có thể về ( ví dụ 1,2,3,4 ) với xác xuất cao nhất, lên đánh trong kỳ tiếp theo. 
-- luật chơi lotobet không cố định 3tinh.
-• 3 số 5 tinh:
-Từ 0~9 chọn ra 3 con số để đặt cược, mỗi một đơn cược được tạo thành bởi 3 con số, chỉ cần trong con số mở thưởng từ hàng【Chục ngàn】【Ngàn】【Trăm】【Chục】【Đơn vị】bao gồm con số đã chọn, đồng thời không giới hạn trình tự con số mở thưởng, như vậy xem như bạn đã trúng thưởng. Con số đã chọn để đặt cược bất luận xuất hiện bao nhiêu lần thì tiền thưởng cũng chỉ được tính 1 lần.
-Ví dụ:
-Đặt cược 3 số 5 tinh【Chục ngàn/Ngàn/Trăm/Chục/Đơn vị】với con số: 1, 2, 6 tạo thành 1 tổ hợp. Con số mở thưởng 5 tinh【Chục ngàn/Ngàn/Trăm/Chục/Đơn vị】là: 12864 như vậy bạn đã trúng thưởng.
-Ví dụ:
-Đặt cược 3 số 5 tinh【Chục ngàn /Ngàn/Trăm/Chục/Đơn vị】với con số: 1, 3, 6 tạo thành 1 tổ hợp. Con số mở thưởng 5 tinh【Chục ngàn /Ngàn/Trăm/Chục/Đơn vị】là: 12662 như vậy bạn không trúng thưởng.
->> cos cần làm 
-"""
 LOTOBET AI TOOL v1.0 - Professional Lottery Analysis
 Nhập số tay → Dự đoán kỳ tiếp theo
 Optimized for Android - Lightweight & Fast
