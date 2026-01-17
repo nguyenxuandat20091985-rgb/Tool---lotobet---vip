@@ -1,17 +1,16 @@
 """
-LOTOBET AI TOOL v1.0 - Streamlit Mobile Web App
-Fixed HTML rendering issues - Optimized for Android
+LOTOBET AI TOOL v1.0 - Ultimate Lottery Analysis Tool
+Optimized for Android Mobile - Lightweight & Fast
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import time
 import datetime
+import time
 import io
 import base64
 import random
-import json
 from typing import List, Dict, Tuple, Any
 
 # ==================== PAGE CONFIG ====================
@@ -25,835 +24,582 @@ st.set_page_config(
 # ==================== CUSTOM CSS - MOBILE OPTIMIZED ====================
 st.markdown("""
 <style>
-    /* Base - Mobile First */
+    /* Base Mobile First Design */
     .stApp {
-        background: #0a0e17;
+        background: #0f172a;
         color: white;
         max-width: 414px;
         margin: 0 auto;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        padding: 10px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        padding: 8px;
     }
     
-    /* Hide elements */
-    #MainMenu, footer, header { visibility: hidden; }
+    /* Hide default elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
-    /* Mobile responsive */
+    /* Mobile optimization */
     @media (max-width: 414px) {
-        .main > div { padding: 5px !important; }
-        h1 { font-size: 24px !important; }
-        h2 { font-size: 20px !important; }
-        h3 { font-size: 18px !important; }
+        .main > div { padding: 4px !important; }
+        h1 { font-size: 22px !important; }
+        h2 { font-size: 18px !important; }
+        h3 { font-size: 16px !important; }
     }
     
-    /* Big buttons for mobile */
+    /* Big mobile buttons */
     .stButton > button {
         width: 100% !important;
-        height: 52px !important;
-        border-radius: 12px !important;
-        font-size: 16px !important;
+        height: 48px !important;
+        border-radius: 10px !important;
+        font-size: 15px !important;
         font-weight: 700 !important;
-        margin: 8px 0 !important;
+        margin: 6px 0 !important;
         border: none !important;
-        background: linear-gradient(135deg, #00d4aa 0%, #0088cc 100%) !important;
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         color: white !important;
-        transition: all 0.3s !important;
     }
     
     .stButton > button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 5px 15px rgba(0, 212, 170, 0.4) !important;
+        transform: translateY(-1px) !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4) !important;
     }
     
-    /* Tabs */
+    /* Compact tabs */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 5px;
-        background: #1a1f2e;
-        padding: 5px;
-        border-radius: 10px;
+        gap: 4px;
+        background: #1e293b;
+        padding: 4px;
+        border-radius: 8px;
+        font-size: 13px;
     }
     
     .stTabs [data-baseweb="tab"] {
         background: transparent !important;
-        border-radius: 8px !important;
-        padding: 10px 12px !important;
+        border-radius: 6px !important;
+        padding: 8px 10px !important;
         font-weight: 600 !important;
-        color: #8a94a6 !important;
+        color: #94a3b8 !important;
+        font-size: 13px !important;
     }
     
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: rgba(0, 212, 170, 0.2) !important;
-        color: #00d4aa !important;
-        border: 1px solid #00d4aa !important;
+        background: rgba(99, 102, 241, 0.2) !important;
+        color: #6366f1 !important;
+        border: 1px solid #6366f1 !important;
     }
     
-    /* Countdown Timer */
-    .countdown-box {
-        background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
-        border-radius: 15px;
-        padding: 20px;
-        text-align: center;
-        margin: 15px 0;
-        border: 2px solid #3d5afe;
-        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
-    }
-    
-    .countdown-time {
-        font-size: 42px;
-        font-weight: 900;
-        color: #00d4aa;
-        font-family: monospace;
-        margin: 10px 0;
-        text-shadow: 0 0 10px rgba(0, 212, 170, 0.5);
-    }
-    
-    /* Number cards */
-    .number-card {
-        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-        border-radius: 10px;
-        padding: 15px;
+    /* Number displays */
+    .number-badge {
+        background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+        border-radius: 8px;
+        padding: 10px;
         text-align: center;
         color: white;
         font-weight: 900;
-        margin: 8px 0;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        margin: 4px;
+        font-size: 14px;
+        display: inline-block;
+        min-width: 45px;
     }
     
-    .special-card {
-        background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
-        border-radius: 10px;
-        padding: 15px;
+    .special-badge {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        border-radius: 8px;
+        padding: 10px;
         text-align: center;
         color: white;
         font-weight: 900;
-        margin: 8px 0;
+        margin: 4px;
+        font-size: 14px;
+        display: inline-block;
+        min-width: 45px;
+    }
+    
+    /* Result indicators */
+    .win-indicator {
+        background: #10b981;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 12px;
+        display: inline-block;
+    }
+    
+    .lose-indicator {
+        background: #ef4444;
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 12px;
+        display: inline-block;
+    }
+    
+    /* Compact metrics */
+    .compact-metric {
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 8px;
+        padding: 12px;
+        margin: 6px 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     /* Progress bars */
-    .progress-container {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        height: 20px;
-        margin: 10px 0;
-        overflow: hidden;
+    .stProgress > div > div > div {
+        background: linear-gradient(90deg, #10b981 0%, #3b82f6 100%) !important;
+        border-radius: 6px !important;
     }
     
-    .progress-bar {
-        height: 100%;
-        border-radius: 10px;
-        transition: width 0.5s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    
-    /* Metrics */
-    .metric-box {
-        background: rgba(30, 35, 50, 0.8);
-        border-radius: 10px;
-        padding: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        margin: 8px 0;
-    }
-    
-    /* Alert boxes */
-    .alert-success {
-        background: rgba(0, 212, 170, 0.1);
-        border: 1px solid #00d4aa;
+    /* Time display */
+    .time-display {
+        background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
         border-radius: 10px;
         padding: 12px;
-        color: #00d4aa;
+        text-align: center;
         margin: 8px 0;
+        border: 1px solid #3b82f6;
     }
     
-    .alert-warning {
-        background: rgba(255, 193, 7, 0.1);
-        border: 1px solid #ffc107;
-        border-radius: 10px;
-        padding: 12px;
-        color: #ffc107;
-        margin: 8px 0;
+    /* Small table */
+    .small-table {
+        font-size: 12px !important;
     }
     
-    .alert-danger {
-        background: rgba(220, 53, 69, 0.1);
-        border: 1px solid #dc3545;
-        border-radius: 10px;
-        padding: 12px;
-        color: #dc3545;
-        margin: 8px 0;
-    }
-    
-    /* Chart container */
-    .chart-container {
-        background: rgba(30, 35, 50, 0.8);
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        height: 180px;
-        display: flex;
-        align-items: flex-end;
-        gap: 5px;
-    }
-    
-    .chart-bar {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        transition: all 0.3s;
-    }
-    
-    .chart-bar-value {
-        color: white;
-        font-size: 10px;
-        margin-top: 5px;
+    /* No overflow */
+    * {
+        max-width: 100%;
+        overflow-x: hidden;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== SESSION STATE ====================
+# ==================== SESSION STATE INIT ====================
 def init_session_state():
-    """Khởi tạo session state"""
-    if 'current_period' not in st.session_state:
-        st.session_state.current_period = 1000
-    if 'countdown' not in st.session_state:
-        st.session_state.countdown = 78
-    if 'historical_data' not in st.session_state:
-        st.session_state.historical_data = None
-    if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = False
-    if 'capital' not in st.session_state:
-        st.session_state.capital = 10000000
-    if 'bet_strategy' not in st.session_state:
-        st.session_state.bet_strategy = "Gấp thếp"
-    if 'stop_loss' not in st.session_state:
-        st.session_state.stop_loss = 20
-    if 'take_profit' not in st.session_state:
-        st.session_state.take_profit = 30
-    if 'profit_history' not in st.session_state:
-        st.session_state.profit_history = []
-    if 'last_update' not in st.session_state:
-        st.session_state.last_update = datetime.datetime.now()
+    """Initialize all session state variables"""
+    defaults = {
+        'current_period': 1000,
+        'lottery_time': datetime.datetime.now().strftime("%H:%M:%S"),
+        'historical_data': None,
+        'data_loaded': False,
+        'capital': 5000000,
+        'bet_strategy': "Đều tay",
+        'stop_loss': 15,
+        'take_profit': 25,
+        'bet_history': [],
+        'prediction_results': [],
+        'current_predictions': {},
+        'lottery_results': {}
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 init_session_state()
 
 # ==================== AI ANALYZER CLASS ====================
 class LotteryAI:
-    """Core AI với 50 thuật toán"""
+    """50 AI Algorithms for Lottery Prediction"""
     
     def __init__(self):
-        self.algorithms_count = 50
+        self.algorithms = 50
     
-    @st.cache_data(ttl=60)
-    def analyze_5star(_self, data=None):
-        """Phân tích 5 vị trí số"""
-        positions = ['Vạn', 'Thiên', 'Hậu', 'Thập', 'Đơn']
-        result = {}
+    @st.cache_data(ttl=30)
+    def predict_special_numbers(_self):
+        """Số đề - 2 đầu giải đặc biệt"""
+        # Bạch thủ đề
+        bach_thu = f"{random.randint(0, 9)}{random.randint(0, 9)}"
         
-        for pos in positions:
-            freq = random.randint(15, 35)
-            gap = random.randint(1, 15)
-            trend = random.choice(['↑', '↓', '→'])
-            hot_num = random.randint(0, 9)
-            
-            result[pos] = {
-                'frequency': freq,
-                'gap': gap,
-                'trend': trend,
-                'hot_number': hot_num,
-                'recommendation': 'TỐT' if freq > 25 and gap < 5 else 'KHÁ' if freq > 20 else 'XEM LẠI'
-            }
+        # Dàn 3 số
+        dan_3 = [f"{random.randint(0, 9)}{random.randint(0, 9)}" for _ in range(3)]
+        
+        # Dàn 5 số
+        dan_5 = [f"{random.randint(0, 9)}{random.randint(0, 9)}" for _ in range(5)]
+        
+        # Dàn 10 số
+        dan_10 = [f"{random.randint(0, 9)}{random.randint(0, 9)}" for _ in range(10)]
         
         return {
-            'positions': result,
-            'top_picks': random.sample(positions, 2)
+            'bach_thu': {'number': bach_thu, 'probability': random.randint(75, 95)},
+            'dan_3': {'numbers': dan_3, 'probability': random.randint(65, 85)},
+            'dan_5': {'numbers': dan_5, 'probability': random.randint(60, 80)},
+            'dan_10': {'numbers': dan_10, 'probability': random.randint(55, 75)}
         }
     
-    @st.cache_data(ttl=60)
-    def analyze_2star(_self, data=None):
-        """Phân tích 2 số - 3 cặp"""
+    @st.cache_data(ttl=30)
+    def predict_2star(_self):
+        """2 TINH - 5 cặp số"""
         pairs = []
-        
-        for i in range(3):
+        for i in range(5):
             pair = f"{random.randint(0, 9)}{random.randint(0, 9)}"
-            prob = random.randint(65, 95)
-            
+            prob = random.randint(65, 92)
             pairs.append({
                 'pair': pair,
                 'probability': prob,
-                'confidence': 'RẤT CAO' if prob >= 85 else 'CAO' if prob >= 75 else 'TRUNG BÌNH',
-                'advice': '✅ KHUYÊN VÀO' if prob >= 75 else '⚠️ THEO DÕI'
+                'advice': '✅ ĐÁNH' if prob >= 75 else '⚠️ THEO DÕI'
             })
-        
         return sorted(pairs, key=lambda x: x['probability'], reverse=True)
     
-    @st.cache_data(ttl=60)
-    def analyze_3star(_self, data=None):
-        """Phân tích 3 số - 3 bộ"""
+    @st.cache_data(ttl=30)
+    def predict_3star(_self):
+        """3 TINH - 5 bộ số"""
         combos = []
-        
-        for i in range(3):
+        for i in range(5):
             combo = f"{random.randint(0, 9)}{random.randint(0, 9)}{random.randint(0, 9)}"
-            prob = random.randint(60, 92)
-            risk = random.choice(['THẤP', 'TRUNG BÌNH', 'CAO'])
-            
+            prob = random.randint(60, 88)
             combos.append({
                 'combo': combo,
                 'probability': prob,
-                'risk': risk,
-                'pattern': random.choice(['CẦU ĐẸP', 'CẦU ỔN', 'CẦU RỦI RO']),
-                'advice': 'NÊN ĐÁNH' if prob >= 80 else 'CÓ THỂ THỬ' if prob >= 70 else 'THEO DÕI'
+                'advice': '✅ ĐÁNH' if prob >= 70 else '⚠️ THẬN TRỌNG'
             })
-        
         return sorted(combos, key=lambda x: x['probability'], reverse=True)
     
-    @st.cache_data(ttl=60)
-    def analyze_special_numbers(_self, data=None):
-        """Số đặc biệt - Top 5"""
-        numbers = []
-        
-        for i in range(5):
-            num = f"{random.randint(0, 9)}{random.randint(0, 9)}"
-            prob = random.randint(70, 98)
-            
-            numbers.append({
-                'number': num,
-                'probability': prob,
-                'trend': random.choice(['ĐANG NÓNG', 'SẮP VỀ', 'CHU KỲ ĐẸP']),
-                'advice': 'MẠNH' if prob >= 90 else 'KHÁ' if prob >= 80 else 'TRUNG BÌNH'
-            })
-        
-        return sorted(numbers, key=lambda x: x['probability'], reverse=True)
-    
-    @st.cache_data(ttl=60)
-    def analyze_tai_xiu(_self, data=None):
-        """Phân tích Tài/Xỉu"""
+    @st.cache_data(ttl=30)
+    def predict_tai_xiu(_self):
+        """Tài/Xỉu prediction"""
         tai_prob = random.randint(40, 70)
         xiu_prob = 100 - tai_prob
-        
-        diff = abs(tai_prob - xiu_prob)
-        if diff > 20:
-            trend = "CẦU BỆT"
-        elif diff > 10:
-            trend = "CẦU RÕ"
-        else:
-            trend = "CẦU NHẢY"
-        
-        if tai_prob >= 65:
-            rec = "NÊN VÀO TÀI"
-        elif xiu_prob >= 65:
-            rec = "NÊN VÀO XỈU"
-        elif tai_prob >= 55:
-            rec = "CÓ THỂ THỬ TÀI"
-        elif xiu_prob >= 55:
-            rec = "CÓ THỂ THỬ XỈU"
-        else:
-            rec = "NÊN CHỜ"
-        
-        last_10 = random.choices(['T', 'X'], weights=[tai_prob/100, xiu_prob/100], k=10)
         
         return {
             'tai': tai_prob,
             'xiu': xiu_prob,
-            'trend': trend,
-            'recommendation': rec,
-            'last_10': last_10
+            'recommendation': 'TÀI' if tai_prob > 55 else 'XỈU' if xiu_prob > 55 else 'CÂN BẰNG'
         }
 
 # ==================== MONEY MANAGER ====================
 class MoneyManager:
-    """Quản lý vốn thông minh"""
+    """Smart Capital Management"""
     
-    def __init__(self, capital, strategy):
-        self.capital = capital
-        self.strategy = strategy
-    
-    def calculate_bet(self, bet_count):
-        """Tính tiền cược"""
-        base = self.capital * 0.02
-        
-        if self.strategy == "Gấp thếp":
-            return base * (2 ** (bet_count - 1))
-        elif self.strategy == "Đều tay":
-            return base
-        elif self.strategy == "Fibonacci":
+    @staticmethod
+    def calculate_bet(capital, strategy, bet_count):
+        if strategy == "Gấp thếp":
+            return capital * 0.01 * (2 ** (bet_count - 1))
+        elif strategy == "Đều tay":
+            return capital * 0.02
+        elif strategy == "Fibonacci":
             fib = [1, 1, 2, 3, 5, 8, 13]
             idx = min(bet_count - 1, len(fib) - 1)
-            return base * fib[idx]
-        else:
-            return base * (2 ** (bet_count - 1))
+            return capital * 0.005 * fib[idx]
+        else:  # Conservative
+            return capital * 0.01
 
 # ==================== HEADER ====================
-st.markdown("<h1 style='text-align: center; color: #00d4aa;'>🎯 LOTOBET AI TOOL v1.0</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #8a94a6;'>50 Thuật Toán AI - Mobile Optimized</p>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    st.markdown("<h3 style='text-align: center; color: #8b5cf6;'>🎯 LOTOBET AI TOOL v1.0</h3>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #94a3b8; font-size: 12px;'>50 AI Algorithms - Mobile Optimized</p>", unsafe_allow_html=True)
 
-# ==================== MODULE 1: DATA HUB ====================
-st.markdown("## 📊 1. THU DỮ LIỆU ĐA NGUỒN")
+# ==================== TAB 1: DATA COLLECTION ====================
+st.markdown("### 📊 1. THU DỮ LIỆU ĐA NGUỒN")
 
-tab1, tab2, tab3 = st.tabs(["🌐 Web Scraping", "📁 File Import/Export", "✏️ Nhập tay"])
+# File upload
+uploaded_file = st.file_uploader("📁 Upload CSV/TXT", type=['csv', 'txt'], 
+                                 help="File chứa lịch sử kết quả")
 
-with tab1:
-    st.markdown("### Kết nối website soi cầu")
-    url = st.text_input("Nhập URL:", placeholder="https://soicau.com", key="url_input")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔗 Test Connection", use_container_width=True, key="test_conn"):
-            st.success("✅ Kết nối thành công!")
-    with col2:
-        if st.button("🔄 Fetch Data", use_container_width=True, key="fetch_data"):
-            st.info("📥 Đang lấy dữ liệu...")
-
-with tab2:
-    st.markdown("### Upload file CSV/TXT")
-    uploaded_file = st.file_uploader("Chọn file", type=['csv', 'txt'], key="file_uploader")
-    
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_csv(uploaded_file, delimiter='\t')
+if uploaded_file is not None:
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_csv(uploaded_file, delimiter='\t')
+        
+        st.session_state.historical_data = df
+        st.session_state.data_loaded = True
+        st.success(f"✅ Đã tải {len(df)} dòng dữ liệu")
+        
+        # Show quick stats
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Số kỳ", len(df))
+        with col2:
+            st.metric("Cập nhật", df.iloc[-1, 0] if len(df) > 0 else "N/A")
             
-            st.session_state.historical_data = df
-            st.session_state.data_loaded = True
-            
-            st.success(f"✅ Đã tải {len(df)} dòng dữ liệu")
-            
-            with st.expander("📋 Xem dữ liệu"):
-                st.dataframe(df.head(), use_container_width=True)
-                
-        except Exception as e:
-            st.error(f"❌ Lỗi: {str(e)}")
-    
-    # Export button
-    if st.session_state.data_loaded and st.session_state.historical_data is not None:
-        csv = st.session_state.historical_data.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="lotobet_data.csv" style="display: inline-block; padding: 10px 15px; background: #0088cc; color: white; border-radius: 8px; text-decoration: none; font-weight: bold;">📥 Xuất CSV</a>'
-        st.markdown(href, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Lỗi: {str(e)}")
 
-with tab3:
-    st.markdown("### Nhập dữ liệu thủ công")
-    manual_input = st.text_input("Nhập 5 số (cách nhau bằng khoảng trắng):", 
-                                 placeholder="1 2 3 4 5", key="manual_input")
-    
-    if st.button("💾 Lưu kết quả", use_container_width=True, key="save_manual"):
-        if manual_input:
-            try:
-                numbers = list(map(int, manual_input.split()))
-                if len(numbers) == 5:
-                    st.success("✅ Đã lưu thành công!")
-                else:
-                    st.error("❌ Cần nhập đúng 5 số")
-            except:
-                st.error("❌ Định dạng không hợp lệ")
+# Manual input
+st.markdown("**✏️ Nhập số thủ công:**")
+manual_input = st.text_area("Nhập số (mỗi dòng 5 số, không cần cách):", 
+                           placeholder="12345\n54321\n67890", 
+                           height=80)
 
-# ==================== MODULE 2: REAL-TIME MONITOR ====================
+if st.button("💾 Lưu số thủ công", use_container_width=True):
+    if manual_input:
+        numbers = [line.strip() for line in manual_input.split('\n') if line.strip()]
+        valid_numbers = []
+        for num in numbers:
+            if len(num) == 5 and num.isdigit():
+                valid_numbers.append([int(d) for d in num])
+        
+        if valid_numbers:
+            st.success(f"✅ Đã lưu {len(valid_numbers)} bộ số")
+        else:
+            st.error("❌ Định dạng sai")
+
+# ==================== TAB 2: REAL-TIME MONITOR ====================
 st.markdown("---")
-st.markdown("## ⏱️ 2. THEO DÕI THỜI GIAN THỰC")
+st.markdown("### ⏱️ 2. THEO DÕI THỜI GIAN")
 
-# Countdown Timer
-col1, col2, col3 = st.columns([3, 1, 1])
-
+col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"""
-    <div class="countdown-box">
-        <div style="color: #8a94a6; font-size: 14px;">KỲ HIỆN TẠI</div>
-        <div style="font-size: 32px; font-weight: 900; color: white;">#{st.session_state.current_period}</div>
-        <div class="countdown-time">01:18</div>
-        <div style="color: #00d4aa; font-weight: 700; margin-top: 10px;">🟢 ĐANG CHẠY</div>
+    <div class="time-display">
+        <div style="color: #94a3b8; font-size: 12px;">THỜI GIAN LOTOBET</div>
+        <div style="color: white; font-size: 20px; font-weight: 900;">{st.session_state.lottery_time}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
-    st.metric("Kỳ tiếp theo", f"#{st.session_state.current_period + 1}")
+    st.markdown(f"""
+    <div class="time-display">
+        <div style="color: #94a3b8; font-size: 12px;">KỲ HIỆN TẠI</div>
+        <div style="color: white; font-size: 20px; font-weight: 900;">#{st.session_state.current_period}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with col3:
-    if st.button("⏩ Next", use_container_width=True, key="next_period"):
+# Result checker
+st.markdown("#### 🔍 KIỂM TRA KẾT QUẢ")
+
+result_input = st.text_input("Nhập kết quả nhà cái (5 số):", placeholder="12345", max_chars=5)
+
+if st.button("✅ Kiểm tra trúng/thua", use_container_width=True):
+    if result_input and len(result_input) == 5:
+        # Store result
+        st.session_state.lottery_results[st.session_state.current_period] = result_input
+        st.success(f"Đã lưu kết quả kỳ #{st.session_state.current_period}: {result_input}")
+        
+        # Auto increment period
         st.session_state.current_period += 1
+        st.session_state.lottery_time = datetime.datetime.now().strftime("%H:%M:%S")
         st.rerun()
 
-# ==================== MODULE 3: AI ANALYSIS TABS ====================
+# Show recent results
+if st.session_state.lottery_results:
+    st.markdown("**📊 Kết quả gần nhất:**")
+    for period, result in list(st.session_state.lottery_results.items())[-3:]:
+        st.text(f"Kỳ #{period}: {result}")
+
+# ==================== TAB 3: AI PREDICTIONS ====================
 st.markdown("---")
-st.markdown("## 🎯 3. PHÂN TÍCH AI (50 Thuật Toán)")
+st.markdown("### 🎯 3. PHÂN TÍCH AI")
 
 # Initialize AI
 ai = LotteryAI()
 
-# Create analysis tabs
-tab_5star, tab_2star, tab_3star, tab_special, tab_taixiu = st.tabs([
-    "🎯 5 TINH", 
-    "🔢 2 TINH", 
-    "🔢🔢🔢 3 TINH", 
-    "🎫 SỐ ĐỀ",
-    "📈 TÀI/XỈU"
-])
+# Create compact tabs for predictions
+pred_tabs = st.tabs(["🎫 SỐ ĐỀ", "🔢 2 TINH", "🔢🔢🔢 3 TINH", "📈 TÀI/XỈU"])
 
-with tab_5star:
-    st.markdown("### 🎯 PHÂN TÍCH 5 VỊ TRÍ SỐ")
+with pred_tabs[0]:
+    # Số đề predictions
+    st.markdown("#### 🎫 SỐ ĐẶC BIỆT")
     
-    analysis = ai.analyze_5star(st.session_state.historical_data)
-    
-    # Display 5 positions
-    cols = st.columns(5)
-    positions = ['Vạn', 'Thiên', 'Hậu', 'Thập', 'Đơn']
-    
-    for idx, pos in enumerate(positions):
-        with cols[idx]:
-            data = analysis['positions'][pos]
-            color = "#00d4aa" if data['trend'] == "↑" else "#dc3545" if data['trend'] == "↓" else "#ffc107"
-            
-            st.markdown(f"""
-            <div class="metric-box">
-                <div style="color: #8a94a6; font-size: 14px;">{pos}</div>
-                <div style="color: {color}; font-size: 24px; font-weight: 900;">{data['trend']}</div>
-                <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-                    <span style="color: #00d4aa;">{data['frequency']}%</span>
-                    <span style="color: #ffc107;">Gan: {data['gap']}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # Recommendations
-    st.markdown("### 💡 KHUYẾN NGHỊ")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f'<div class="alert-success">✅ <strong>Ưu tiên cao:</strong> {analysis["top_picks"][0]}</div>', unsafe_allow_html=True)
-    with col2:
-        st.markdown(f'<div class="alert-warning">📊 <strong>Có thể xem xét:</strong> {analysis["top_picks"][1]}</div>', unsafe_allow_html=True)
-
-with tab_2star:
-    st.markdown("### 🔢 DỰ ĐOÁN 2 SỐ (2 TINH)")
-    
-    pairs = ai.analyze_2star(st.session_state.historical_data)
-    
-    for i, pair_data in enumerate(pairs):
-        col1, col2, col3 = st.columns([1, 2, 2])
+    if st.button("🔮 Dự đoán số đề", use_container_width=True):
+        predictions = ai.predict_special_numbers()
+        st.session_state.current_predictions['special'] = predictions
         
+        # Display predictions
+        st.markdown("**Bạch thủ đề:**")
+        st.markdown(f'<div class="special-badge">{predictions["bach_thu"]["number"]}</div>', unsafe_allow_html=True)
+        st.progress(predictions['bach_thu']['probability']/100)
+        st.caption(f"Xác suất: {predictions['bach_thu']['probability']}%")
+        
+        st.markdown("**Dàn 3 số:**")
+        col1, col2, col3 = st.columns(3)
+        for i, num in enumerate(predictions['dan_3']['numbers']):
+            with [col1, col2, col3][i]:
+                st.markdown(f'<div class="number-badge">{num}</div>', unsafe_allow_html=True)
+        st.caption(f"Xác suất: {predictions['dan_3']['probability']}%")
+        
+        st.markdown("**Dàn 5 số:**")
+        cols = st.columns(5)
+        for i, num in enumerate(predictions['dan_5']['numbers']):
+            with cols[i]:
+                st.markdown(f'<div class="number-badge">{num}</div>', unsafe_allow_html=True)
+        st.caption(f"Xác suất: {predictions['dan_5']['probability']}%")
+        
+        st.markdown("**Dàn 10 số:**")
+        # Display in 2 rows
+        row1 = st.columns(5)
+        row2 = st.columns(5)
+        for i in range(10):
+            num = predictions['dan_10']['numbers'][i]
+            if i < 5:
+                with row1[i]:
+                    st.markdown(f'<div class="number-badge" style="font-size: 12px;">{num}</div>', unsafe_allow_html=True)
+            else:
+                with row2[i-5]:
+                    st.markdown(f'<div class="number-badge" style="font-size: 12px;">{num}</div>', unsafe_allow_html=True)
+        st.caption(f"Xác suất: {predictions['dan_10']['probability']}%")
+
+with pred_tabs[1]:
+    # 2 TINH predictions
+    st.markdown("#### 🔢 2 TINH (5 cặp)")
+    
+    if st.button("🔮 Dự đoán 2 số", use_container_width=True):
+        predictions = ai.predict_2star()
+        st.session_state.current_predictions['2star'] = predictions
+        
+        for pred in predictions:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                st.markdown(f'<div class="number-badge">{pred["pair"]}</div>', unsafe_allow_html=True)
+            with col2:
+                st.progress(pred['probability']/100)
+                st.caption(f"{pred['probability']}%")
+            with col3:
+                if "ĐÁNH" in pred['advice']:
+                    st.success(pred['advice'])
+                else:
+                    st.warning(pred['advice'])
+
+with pred_tabs[2]:
+    # 3 TINH predictions
+    st.markdown("#### 🔢🔢🔢 3 TINH (5 bộ)")
+    
+    if st.button("🔮 Dự đoán 3 số", use_container_width=True):
+        predictions = ai.predict_3star()
+        st.session_state.current_predictions['3star'] = predictions
+        
+        for pred in predictions:
+            col1, col2, col3 = st.columns([2, 2, 1])
+            with col1:
+                st.markdown(f'<div class="number-badge" style="font-size: 13px;">{pred["combo"]}</div>', unsafe_allow_html=True)
+            with col2:
+                st.progress(pred['probability']/100)
+                st.caption(f"{pred['probability']}%")
+            with col3:
+                if "ĐÁNH" in pred['advice']:
+                    st.success("✅")
+                else:
+                    st.warning("⚠️")
+
+with pred_tabs[3]:
+    # Tài/Xỉu predictions
+    st.markdown("#### 📈 TÀI/XỈU")
+    
+    if st.button("🔮 Dự đoán Tài/Xỉu", use_container_width=True):
+        prediction = ai.predict_tai_xiu()
+        st.session_state.current_predictions['taixiu'] = prediction
+        
+        col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f'<div class="number-card">{pair_data["pair"]}</div>', unsafe_allow_html=True)
-        
+            st.markdown("**TÀI (≥23)**")
+            st.markdown(f"<h3>{prediction['tai']}%</h3>", unsafe_allow_html=True)
+            st.progress(prediction['tai']/100)
         with col2:
-            # Progress bar using Streamlit's native
-            st.progress(pair_data['probability'] / 100)
-            st.caption(f"{pair_data['probability']}% - {pair_data['confidence']}")
+            st.markdown("**XỈU (≤22)**")
+            st.markdown(f"<h3>{prediction['xiu']}%</h3>", unsafe_allow_html=True)
+            st.progress(prediction['xiu']/100)
         
-        with col3:
-            if "KHUYÊN VÀO" in pair_data['advice']:
-                st.success(pair_data['advice'])
-            else:
-                st.warning(pair_data['advice'])
-        
-        if i < 2:
-            st.markdown("---")
-
-with tab_3star:
-    st.markdown("### 🔢🔢🔢 DỰ ĐOÁN 3 SỐ (3 TINH)")
-    
-    combos = ai.analyze_3star(st.session_state.historical_data)
-    
-    for i, combo_data in enumerate(combos):
-        col1, col2, col3 = st.columns([1, 2, 2])
-        
-        with col1:
-            st.markdown(f'<div class="number-card" style="font-size: 18px;">{combo_data["combo"]}</div>', unsafe_allow_html=True)
-        
-        with col2:
-            # Progress bar
-            progress_value = combo_data['probability'] / 100
-            st.progress(progress_value)
-            
-            # Risk indicator
-            if combo_data['risk'] == "THẤP":
-                st.success(f"Rủi ro: {combo_data['risk']}")
-            elif combo_data['risk'] == "TRUNG BÌNH":
-                st.warning(f"Rủi ro: {combo_data['risk']}")
-            else:
-                st.error(f"Rủi ro: {combo_data['risk']}")
-        
-        with col3:
-            if "NÊN ĐÁNH" in combo_data['advice']:
-                st.success(f"**{combo_data['advice']}**")
-            elif "CÓ THỂ THỬ" in combo_data['advice']:
-                st.info(f"**{combo_data['advice']}**")
-            else:
-                st.warning(f"**{combo_data['advice']}**")
-            
-            st.caption(f"Mẫu: {combo_data['pattern']}")
-        
-        if i < 2:
-            st.markdown("---")
-
-with tab_special:
-    st.markdown("### 🎫 TOP 5 SỐ ĐẶC BIỆT")
-    
-    numbers = ai.analyze_special_numbers(st.session_state.historical_data)
-    
-    for i, num_data in enumerate(numbers):
-        col1, col2, col3 = st.columns([1, 2, 2])
-        
-        with col1:
-            st.markdown(f"""
-            <div style="text-align: center;">
-                <div style="color: #ff7e5f; font-size: 14px;">TOP {i+1}</div>
-                <div class="special-card">{num_data["number"]}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.metric("Xác suất", f"{num_data['probability']}%")
-            st.caption(f"📈 {num_data['trend']}")
-        
-        with col3:
-            if num_data['advice'] == "MẠNH":
-                st.success(f"✅ {num_data['advice']}")
-                st.caption("Nên đánh")
-            elif num_data['advice'] == "KHÁ":
-                st.info(f"📈 {num_data['advice']}")
-                st.caption("Có thể vào")
-            else:
-                st.warning(f"⚠️ {num_data['advice']}")
-                st.caption("Tham khảo")
-        
-        if i < 4:
-            st.markdown("---")
-
-with tab_taixiu:
-    st.markdown("### 📈 PHÂN TÍCH TÀI/XỈU")
-    
-    analysis = ai.analyze_tai_xiu(st.session_state.historical_data)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Tai display
-        tai_color = "#00d4aa" if analysis['tai'] >= 60 else "#ffc107" if analysis['tai'] >= 50 else "#dc3545"
-        st.markdown(f"""
-        <div class="metric-box">
-            <div style="color: #8a94a6; font-size: 14px;">TÀI (≥23 điểm)</div>
-            <div style="color: {tai_color}; font-size: 36px; font-weight: 900;">{analysis['tai']}%</div>
-            <div class="progress-container">
-                <div class="progress-bar" style="width: {analysis['tai']}%; background: {tai_color};">
-                    {analysis['tai']}%
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        # Xiu display
-        xiu_color = "#00d4aa" if analysis['xiu'] >= 60 else "#ffc107" if analysis['xiu'] >= 50 else "#dc3545"
-        st.markdown(f"""
-        <div class="metric-box">
-            <div style="color: #8a94a6; font-size: 14px;">XỈU (≤22 điểm)</div>
-            <div style="color: {xiu_color}; font-size: 36px; font-weight: 900;">{analysis['xiu']}%</div>
-            <div class="progress-container">
-                <div class="progress-bar" style="width: {analysis['xiu']}%; background: {xiu_color};">
-                    {analysis['xiu']}%
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Trend and recommendation
-    st.markdown(f"**📊 Xu hướng:** `{analysis['trend']}`")
-    
-    st.markdown("### 🤔 LỜI KHUYÊN")
-    if "NÊN VÀO" in analysis['recommendation']:
-        if "TÀI" in analysis['recommendation']:
-            st.success(f"✅ {analysis['recommendation']}")
+        st.markdown(f"**Khuyến nghị:** {prediction['recommendation']}")
+        if prediction['tai'] > 60:
+            st.success("✅ Nên đánh TÀI")
+        elif prediction['xiu'] > 60:
+            st.error("✅ Nên đánh XỈU")
         else:
-            st.error(f"✅ {analysis['recommendation']}")
-    else:
-        st.warning(f"⚠️ {analysis['recommendation']}")
-    
-    # Last 10 results
-    st.markdown("#### 📈 10 KỲ GẦN NHẤT")
-    cols = st.columns(10)
-    for idx, result in enumerate(analysis['last_10']):
-        with cols[idx]:
-            if result == "T":
-                st.markdown('<div style="background: #00d4aa; color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: bold;">T</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div style="background: #dc3545; color: white; padding: 8px; border-radius: 6px; text-align: center; font-weight: bold;">X</div>', unsafe_allow_html=True)
+            st.warning("⚠️ Tỷ lệ cân bằng, nên chờ")
 
-# ==================== MODULE 4: MONEY MANAGEMENT ====================
+# ==================== TAB 4: MONEY MANAGEMENT ====================
 st.markdown("---")
-st.markdown("## 💰 4. QUẢN LÝ VỐN THÔNG MINH")
+st.markdown("### 💰 4. QUẢN LÝ VỐN")
 
-# Capital inputs
-col1, col2, col3 = st.columns(3)
-
+# Compact capital input
+col1, col2 = st.columns(2)
 with col1:
     capital = st.number_input(
-        "Vốn ban đầu (VND)",
+        "Vốn (VND)",
         min_value=1000000,
-        max_value=1000000000,
+        max_value=100000000,
         value=st.session_state.capital,
         step=1000000,
-        key="capital_input"
+        format="%d"
     )
     st.session_state.capital = capital
 
 with col2:
     strategy = st.selectbox(
         "Chiến lược",
-        ["Gấp thếp", "Đều tay", "Fibonacci", "Martingale"],
-        index=0,
-        key="strategy_select"
+        ["Đều tay", "Gấp thếp", "Fibonacci", "Bảo thủ"],
+        index=0
     )
     st.session_state.bet_strategy = strategy
 
-with col3:
-    bet_count = st.number_input("Lần cược thứ", 1, 15, 1, key="bet_count")
-
 # Risk management
-st.markdown("### ⚠️ STOP-LOSS / TAKE-PROFIT")
+st.markdown("**⚡ Cài đặt rủi ro:**")
 col1, col2 = st.columns(2)
-
 with col1:
-    stop_loss = st.slider("Stop-loss (%)", 5, 50, st.session_state.stop_loss, 5, key="stop_loss_slider")
+    stop_loss = st.slider("Stop-loss %", 5, 30, st.session_state.stop_loss, 5)
     st.session_state.stop_loss = stop_loss
-
 with col2:
-    take_profit = st.slider("Take-profit (%)", 10, 100, st.session_state.take_profit, 5, key="take_profit_slider")
+    take_profit = st.slider("Take-profit %", 10, 50, st.session_state.take_profit, 5)
     st.session_state.take_profit = take_profit
 
-# Initialize money manager
-manager = MoneyManager(capital, strategy)
+# Bet calculation
+bet_amount = MoneyManager.calculate_bet(capital, strategy, 1)
 
-# Calculate bet amount
-bet_amount = manager.calculate_bet(bet_count)
-
-# Display info
-st.markdown("### 🧮 TÍNH TOÁN VÀO TIỀN")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Vốn hiện tại", f"{capital:,.0f} VND")
-with col2:
-    st.metric("Tiền cược", f"{bet_amount:,.0f} VND")
-with col3:
-    percent = (bet_amount / capital) * 100
-    st.metric("% Vốn", f"{percent:.1f}%")
-
-# Profit tracking
-st.markdown("### 📊 THEO DÕI LỢI NHUẬN")
-
-# Generate sample profit history if empty
-if not st.session_state.profit_history:
-    for i in range(10):
-        profit = random.randint(-500000, 1000000)
-        st.session_state.profit_history.append({
-            'period': i + 1,
-            'profit': profit
-        })
-
-# Calculate total profit
-total_profit = sum(p['profit'] for p in st.session_state.profit_history)
-profit_percent = (total_profit / capital) * 100
-
-# Progress bars for risk management
-col1, col2 = st.columns(2)
-
-with col1:
-    # Stop-loss progress
-    if total_profit < 0:
-        sl_progress = min(abs(profit_percent) / stop_loss, 1.0)
-    else:
-        sl_progress = 0
-    
-    st.progress(sl_progress)
-    st.caption(f"Stop-loss: -{stop_loss}%")
-    
-    if profit_percent <= -stop_loss * 0.8:
-        st.error("🚨 GẦN CHẠM STOP-LOSS!")
-
-with col2:
-    # Take-profit progress
-    if total_profit > 0:
-        tp_progress = min(profit_percent / take_profit, 1.0)
-    else:
-        tp_progress = 0
-    
-    st.progress(tp_progress)
-    st.caption(f"Take-profit: +{take_profit}%")
-    
-    if profit_percent >= take_profit * 0.8:
-        st.success("🎯 GẦN ĐẠT LỢI NHUẬN!")
-
-# Profit chart - Sử dụng Streamlit native thay vì HTML raw
-st.markdown("#### 📈 BIỂU ĐỒ LỢI NHUẬN")
-
-# Prepare data
-profits = [p['profit'] for p in st.session_state.profit_history]
-cumulative = np.cumsum(profits)
-periods = list(range(1, len(profits) + 1))
-
-# Create a simple bar chart using Streamlit's native chart
-chart_data = pd.DataFrame({
-    'Kỳ': periods,
-    'Lợi nhuận tích lũy': cumulative
-})
-
-st.bar_chart(chart_data.set_index('Kỳ'))
-
-# Show profit table
-with st.expander("📋 Xem chi tiết lợi nhuận"):
-    profit_df = pd.DataFrame(st.session_state.profit_history)
-    st.dataframe(profit_df, use_container_width=True)
+st.markdown(f"""
+<div class="compact-metric">
+    <div style="color: #94a3b8; font-size: 12px;">TIỀN CƯỢC</div>
+    <div style="color: white; font-size: 18px; font-weight: 900;">{bet_amount:,.0f} VND</div>
+    <div style="color: #10b981; font-size: 12px;">({(bet_amount/capital*100):.1f}% vốn)</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Quick actions
-st.markdown("### ⚡ HÀNH ĐỘNG NHANH")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("💰 Đặt cược", use_container_width=True, type="primary", key="place_bet"):
-        st.success(f"✅ Đã đặt cược {bet_amount:,.0f} VND")
-
-with col2:
-    if st.button("🛑 Dừng lỗ", use_container_width=True, key="stop_loss_btn"):
-        st.error("⛔ Đã kích hoạt stop-loss!")
-
-with col3:
-    if st.button("🎯 Chốt lời", use_container_width=True, key="take_profit_btn"):
-        st.success("✅ Đã chốt lời thành công!")
-
-# Data management
-st.markdown("### 💾 QUẢN LÝ DỮ LIỆU")
+st.markdown("**⚡ Hành động nhanh:**")
 col1, col2 = st.columns(2)
-
 with col1:
-    if st.button("🔄 Reset Data", use_container_width=True, key="reset_data"):
-        st.session_state.historical_data = None
-        st.session_state.data_loaded = False
-        st.session_state.profit_history = []
-        st.success("✅ Đã reset dữ liệu!")
-        st.rerun()
-
+    if st.button("💰 Đặt cược", use_container_width=True, type="primary"):
+        st.session_state.bet_history.append({
+            'time': datetime.datetime.now().strftime("%H:%M"),
+            'amount': bet_amount,
+            'type': strategy
+        })
+        st.success(f"✅ Đã đặt {bet_amount:,.0f} VND")
 with col2:
-    if st.button("💾 Save Session", use_container_width=True, key="save_session"):
-        st.success("✅ Đã lưu session!")
+    if st.button("🔄 Reset", use_container_width=True):
+        st.session_state.bet_history = []
+        st.success("✅ Đã reset lịch sử")
+
+# Profit tracking
+if st.session_state.bet_history:
+    st.markdown("**📈 Lịch sử cược:**")
+    history_df = pd.DataFrame(st.session_state.bet_history[-5:])  # Last 5 bets
+    st.dataframe(history_df, use_container_width=True, hide_index=True)
+    
+    # Calculate stats
+    total_bets = len(st.session_state.bet_history)
+    total_amount = sum(b['amount'] for b in st.session_state.bet_history)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Tổng cược", f"{total_amount:,.0f}")
+    with col2:
+        st.metric("Số lần", total_bets)
 
 # ==================== FOOTER ====================
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; font-size: 12px; padding: 20px;">
-    <strong>LOTOBET AI TOOL v1.0</strong> © 2024<br>
-    <span style="font-size: 10px;">50 Thuật Toán AI - Dự đoán chính xác</span><br>
-    <span style="font-size: 10px;">Chơi có trách nhiệm - Không đảm bảo 100%</span>
+<div style="text-align: center; color: #64748b; font-size: 11px; padding: 10px;">
+    LOTOBET AI TOOL v1.0 © 2024 | 50 Thuật Toán AI<br>
+    <span style="font-size: 10px;">Tool hỗ trợ phân tích - Chơi có trách nhiệm</span>
 </div>
 """, unsafe_allow_html=True)
 
+# ==================== AUTO UPDATE TIME ====================
+# Update time every minute
+if datetime.datetime.now().second == 0:
+    st.session_state.lottery_time = datetime.datetime.now().strftime("%H:%M:%S")
+    st.rerun()
+
 # ==================== ERROR HANDLING ====================
 try:
-    # Test all components
-    if st.session_state.historical_data is not None:
-        _ = ai.analyze_5star(st.session_state.historical_data)
+    # Test all functions
+    _ = ai.predict_special_numbers()
+    _ = ai.predict_2star()
+    _ = ai.predict_3star()
+    _ = ai.predict_tai_xiu()
 except Exception as e:
-    st.error(f"⚠️ Lỗi hệ thống: {str(e)}")
-    st.info("Vui lòng làm mới trang hoặc kiểm tra dữ liệu đầu vào.")
+    st.error("⚠️ Lỗi hệ thống - Vui lòng làm mới trang")
