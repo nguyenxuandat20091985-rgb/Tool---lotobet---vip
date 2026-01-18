@@ -2,127 +2,115 @@ import streamlit as st
 import re
 from collections import Counter
 
-# --- GIAO DIỆN TỐI ƯU CHO NOTE 10+ (ĐỘ TƯƠNG PHẢN CỰC CAO) ---
-st.set_page_config(page_title="AI OMNI v4.8", layout="centered")
+# --- GIAO DIỆN HIỂN THỊ SIÊU TƯƠNG PHẢN (CHỐNG MỜ) ---
+st.set_page_config(page_title="X-MATRIX v4.9", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #000; color: #fff; }
-    .stTextArea textarea { background-color: #050505; color: #00FF00; border: 2px solid #333; font-size: 18px !important; }
+    .stTextArea textarea { background-color: #0a0a0a; color: #00FF00; border: 2px solid #222; font-size: 20px !important; }
     
-    .bt-box {
-        background: #000; padding: 25px; border-radius: 20px; border: 3px solid #00FF00;
-        text-align: center; margin-bottom: 20px; box-shadow: 0 0 35px rgba(0,255,0,0.3);
+    .main-card {
+        background: #000; padding: 30px; border-radius: 25px; border: 4px solid #00FF00;
+        text-align: center; margin-bottom: 20px; box-shadow: 0 0 50px rgba(0,255,0,0.2);
     }
-    .bt-val { font-size: 90px; color: #00FF00; font-weight: bold; line-height: 1; }
+    .val-large { font-size: 110px; color: #00FF00; font-weight: bold; line-height: 1; text-shadow: 0 0 30px #00FF00; }
     
-    .xien-box {
-        background: #111; padding: 20px; border-radius: 15px;
-        border: 2px solid #444; text-align: center; width: 100%; margin-bottom: 15px;
+    .xien-grid { display: flex; gap: 15px; margin-top: 20px; }
+    .xien-item {
+        flex: 1; background: #111; padding: 25px; border-radius: 15px;
+        border: 2px solid #444; text-align: center;
     }
-    .xien-val { color: #FFFFFF !important; font-size: 35px !important; font-weight: 900 !important; }
-    
-    .status-win { color: #00ff00; font-weight: bold; background: rgba(0,255,0,0.1); padding: 12px; border-radius: 8px; margin-bottom: 5px; border-left: 8px solid #00ff00; }
-    .status-loss { color: #ff4b2b; font-weight: bold; background: rgba(255,75,43,0.1); padding: 12px; border-radius: 8px; margin-bottom: 5px; border-left: 8px solid #ff4b2b; }
+    .xien-val { color: #FFFFFF !important; font-size: 40px !important; font-weight: 900 !important; }
+
+    .win-log { color: #00ff00; font-weight: bold; background: rgba(0,255,0,0.1); padding: 10px; border-radius: 5px; border-left: 10px solid #00ff00; margin-bottom: 5px; }
+    .loss-log { color: #ff4b2b; font-weight: bold; background: rgba(255,75,43,0.1); padding: 10px; border-radius: 5px; border-left: 10px solid #ff4b2b; margin-bottom: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-if 'log' not in st.session_state: st.session_state.log = []
-if 'last_pred' not in st.session_state: st.session_state.last_pred = None
-if 'saved_res' not in st.session_state: st.session_state.saved_res = None
+# Khởi tạo bộ nhớ nhịp cầu
+if 'history' not in st.session_state: st.session_state.history = []
+if 'last_p' not in st.session_state: st.session_state.last_p = None
 
-# --- THUẬT TOÁN BIẾN THIÊN (DYNAMIC ANALYTICS) ---
-def analyze_omni(raw):
+def engine_x49(raw):
     clean = re.sub(r'\d{6,}', ' ', raw)
     nums = [int(n) for n in re.findall(r'\d', clean)]
-    if not nums: return None, None
+    if len(nums) < 25: return None, nums
 
-    # Check thắng thua (Quét 5 số giải thưởng)
-    if st.session_state.last_pred is not None:
-        if st.session_state.last_pred in nums[-5:]:
-            st.session_state.log.insert(0, f"✅ Số {st.session_state.last_pred} - THẮNG")
+    # TỰ ĐỘNG KIỂM TRA (Quét sâu 5 số)
+    if st.session_state.last_p is not None:
+        if st.session_state.last_p in nums[-5:]:
+            st.session_state.log.insert(0, f"✅ THẮNG: {st.session_state.last_p}")
         else:
-            st.session_state.log.insert(0, f"❌ Số {st.session_state.last_pred} - THUA")
-        st.session_state.last_pred = None
+            st.session_state.log.insert(0, f"❌ THUA: {st.session_state.last_p}")
+        st.session_state.last_p = None
 
-    if len(nums) < 20: return None, nums
-
-    counts = Counter(nums)
-    last_5 = nums[-5:]
-    total = len(nums)
-    last_pos = {i: -1 for i in range(10)}
-    for i, v in enumerate(nums): last_pos[v] = i
-
-    # ĐỊNH NGHĨA 10 THUẬT TOÁN CHẠY ĐỘC LẬP
+    # HỆ THỐNG 6 THUẬT TOÁN NEURAL BIAS
     scored = []
+    last_val = nums[-1]
+    last_5 = nums[-5:]
+    counts = Counter(nums[-30:]) # Chỉ quét 30 số gần nhất để nhạy bén
+
     for n in range(10):
         s = 0
-        gap = (total - 1) - last_pos[n]
+        # T.Toán 1: Nhịp Rơi Tự Do (Ưu tiên nhịp 4, 6, 8)
+        gap = 0
+        for i, v in enumerate(reversed(nums[:-1])):
+            if v == n: break
+            gap += 1
         
-        # 1. Thuật toán Nhịp Hồi Vàng (Gap 3, 5, 7)
-        if gap in [3, 5, 7]: s += 20
-        # 2. Thuật toán Đối xứng (Mirror 1-6, 2-7...)
-        if n == {0:5, 1:6, 2:7, 3:8, 4:9, 5:0, 6:1, 7:2, 8:3, 9:4}.get(nums[-1]): s += 15
-        # 3. Thuật toán Tổng Chạm (Sum modulo 10)
-        if n == (sum(last_5) % 10): s += 15
-        # 4. Thuật toán Tần suất trung bình (Tránh số quá hot, tránh số quá gan)
-        if 2 <= counts[n] <= 5: s += 25
-        # 5. Thuật toán Bệt (Repeat) - Kiểm tra 2 kỳ gần nhất
-        if n in nums[-2:]: s += 10
-        # 6. Thuật toán Xác suất Poisson (Dự đoán số sắp rơi)
-        if gap > 8 and gap < 12: s += 10
-        # 7. Thuật toán Tam giác (Dựa vào giải trước nữa)
-        if n == (nums[-1] + nums[-2]) % 10: s += 10
-        
-        # BỘ LỌC THÔNG MINH:
-        # Nếu số đó đang Gan (gap > 12) -> ÉP CHẾT ĐIỂM = 0
+        if gap in [4, 6, 8]: s += 30
+        # T.Toán 2: Đối xứng Quantum (Loại trừ bóng chết)
+        if n == {0:5, 1:6, 2:7, 3:8, 4:9, 5:0, 6:1, 7:2, 8:3, 9:4}.get(last_val): s += 15
+        # T.Toán 3: Tổng cân bằng sảnh A
+        if n == (sum(last_5) % 10): s += 20
+        # T.Toán 4: Thuật toán Bệt (Nếu đang bệt thì đánh tiếp)
+        if n == last_val and nums[-1] == nums[-2]: s += 25
+        # T.Toán 5: Tần suất an toàn (Né số nổ > 6 lần/30 kỳ)
+        if 1 <= counts[n] <= 4: s += 10
+        # T.Toán 6: Điểm rơi lùi 2 kỳ
+        if n == (nums[-2] + 1) % 10: s += 5
+
+        # BỘ LỌC TỬ THẦN (Né 100% số Gan cực dài)
         if gap > 12: s = 0 
         
-        # KIỂM TRA ĐỘ HỘI TỤ
-        scored.append({'n': n, 's': round(s, 1)})
+        scored.append({'n': n, 's': s})
     
     return sorted(scored, key=lambda x: x['s'], reverse=True), nums
 
-# --- HIỂN THỊ ---
-st.title("🌌 AI OMNI v4.8")
-input_data = st.text_area("NHẬP DỮ LIỆU CẦU:", height=80, placeholder="Dán dãy số từ S-Pen...")
+# --- GIAO DIỆN CHÍNH ---
+st.title("🛡️ X-MATRIX v4.9 NEURAL")
+data_in = st.text_area("DÁN DỮ LIỆU S-PEN:", height=100)
 
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("🚀 KÍCH HOẠT OMNI"):
-        res, clean_nums = analyze_omni(input_data)
+col_a, col_b = st.columns(2)
+with col_a:
+    if st.button("🚀 PHÂN TÍCH X-MATRIX"):
+        res, clean_nums = engine_x49(data_in)
         if res:
-            st.session_state.last_pred = res[0]['n']
-            st.session_state.saved_res = {'res': res, 'nums': clean_nums}
-        else: st.error("Cần 20 số để máy học nhịp cầu!")
-with c2:
-    if st.button("🗑️ RESET"): st.session_state.clear(); st.rerun()
+            st.session_state.last_p = res[0]['n']
+            st.session_state.saved = res
+        else: st.error("Cần tối thiểu 25 số!")
+with col_b:
+    if st.button("🔄 LÀM MỚI"): st.session_state.clear(); st.rerun()
 
-if st.session_state.saved_res:
-    r = st.session_state.saved_res['res']
-    
+if 'saved' in st.session_state:
+    r = st.session_state.saved
     st.markdown(f"""
-        <div class="bt-box">
-            <div style="color:#888; font-size:16px;">BẠCH THỦ OMNI</div>
-            <div class="bt-val">{r[0]['n']}</div>
-            <div style="color:#00FF00; font-weight:bold; margin-top:10px;">TỈ LỆ HỘI TỤ: {r[0]['s']}%</div>
+        <div class="main-card">
+            <div style="color:#888; font-size:18px;">BẠCH THỦ CHỐT KỲ</div>
+            <div class="val-large">{r[0]['n']}</div>
+            <div style="color:{'#00FF00' if r[0]['s'] >= 65 else '#FF4B2B'}; font-size:24px; font-weight:bold;">
+                ĐIỂM TIN CẬY: {r[0]['s']}/100
+            </div>
         </div>
     """, unsafe_allow_html=True)
     
     st.markdown(f"""
-        <div class="xien-box">
-            <div style="color:#FFD700; font-weight:bold;">✨ XIÊN 3 HỘI TỤ CAO</div>
-            <div class="xien-val">{r[0]['n']} - {r[1]['n']} - {r[2]['n']}</div>
+        <div class="xien-grid">
+            <div class="xien-item"><div style="color:#FFD700;">XIÊN 2</div><div class="xien-val">{r[0]['n']}-{r[1]['n']}</div></div>
+            <div class="xien-item"><div style="color:#FFD700;">XIÊN 3</div><div class="xien-val">{r[0]['n']}-{r[1]['n']}-{r[2]['n']}</div></div>
         </div>
     """, unsafe_allow_html=True)
 
-    if r[0]['s'] < 55:
-        st.error("⚠️ CẦU ĐANG LOẠN (ĐỘ TIN CẬY THẤP) - KHÔNG NÊN ĐÁNH!")
-    else:
-        st.success("💎 NHỊP CẦU ĐẸP - VÀO TIỀN TỰ TIN")
-
-st.markdown("---")
-# Lịch sử
-for item in st.session_state.log[:12]:
-    cls = "status-win" if "✅" in item else "status-loss"
-    st.markdown(f'<div class="{cls}">{item}</div>', unsafe_allow_html=True)
+    if r[0]['s'] < 65:
+        st.warning("⚠️ Cảnh báo: Nhịp cầu đang nhiễu mạnh. Chỉ nên đánh nhẹ!")
