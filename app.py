@@ -2,128 +2,120 @@ import streamlit as st
 import re
 from collections import Counter
 
-# --- CẤU HÌNH GIAO DIỆN SIÊU TƯƠNG PHẢN ---
-st.set_page_config(page_title="TITAN BLACK v5.0", layout="centered")
+# --- 1. CẤU HÌNH GIAO DIỆN PLATINUM (SIÊU NÉT) ---
+st.set_page_config(page_title="AI v4.5 PLATINUM", layout="centered")
 
 st.markdown("""
     <style>
-    .main { background-color: #000000; color: #ffffff; }
-    .stTextArea textarea { background-color: #050505; color: #00FF00; border: 2px solid #1f1f1f; font-size: 20px !important; }
+    .main { background-color: #000; color: #fff; }
+    .stTextArea textarea { background-color: #0a0a0a; color: #00FF00; border: 2px solid #444; font-size: 18px !important; }
     
-    .card {
-        background: linear-gradient(180deg, #0a0a0a 0%, #000 100%);
-        padding: 30px; border-radius: 20px; border: 2px solid #333;
-        text-align: center; margin-bottom: 20px;
+    .card-bt {
+        background: linear-gradient(180deg, #111 0%, #000 100%);
+        padding: 35px; border-radius: 25px; border: 3px solid #00FF00;
+        text-align: center; margin-bottom: 20px; box-shadow: 0 0 40px rgba(0,255,0,0.2);
     }
-    .big-num { font-size: 120px; color: #00FF00; font-weight: bold; line-height: 1; text-shadow: 0 0 40px rgba(0,255,0,0.4); }
-    .reliability { font-size: 24px; font-weight: bold; margin-top: 10px; }
+    .val-bt { font-size: 130px; color: #00FF00; font-weight: 900; line-height: 1; text-shadow: 0 0 45px #00FF00; }
     
-    .xien-box {
-        background: #111; padding: 20px; border-radius: 12px; border: 1px solid #444;
-        text-align: center; margin-top: 10px;
+    .xien-item {
+        background: #fff; padding: 20px; border-radius: 15px;
+        text-align: center; border: 3px solid #FFD700; width: 100%;
     }
-    .xien-val { color: #FFFFFF; font-size: 38px; font-weight: 900; }
-    
-    .win { color: #00ff00; background: rgba(0,255,0,0.1); padding: 8px; border-left: 8px solid #00ff00; margin-bottom: 4px; border-radius: 4px; }
-    .loss { color: #ff4b2b; background: rgba(255,75,43,0.1); padding: 8px; border-left: 8px solid #ff4b2b; margin-bottom: 4px; border-radius: 4px; }
+    .xien-label { color: #000; font-size: 14px; font-weight: bold; text-transform: uppercase; }
+    .xien-val { color: #ff0000 !important; font-size: 40px !important; font-weight: 900 !important; }
+
+    .log-win { color: #00ff00; font-weight: bold; background: rgba(0,255,0,0.1); padding: 12px; border-radius: 8px; margin-bottom: 5px; border-left: 8px solid #00ff00; }
+    .log-loss { color: #ff4b2b; font-weight: bold; background: rgba(255,75,43,0.1); padding: 12px; border-radius: 8px; margin-bottom: 5px; border-left: 8px solid #ff4b2b; }
     </style>
     """, unsafe_allow_html=True)
 
-# Khởi tạo bộ nhớ (Fix lỗi AttributeError)
-if 'titan_log' not in st.session_state: st.session_state.titan_log = []
-if 'next_bet' not in st.session_state: st.session_state.next_bet = None
+if 'log_v45' not in st.session_state: st.session_state.log_v45 = []
+if 'last_pred_v45' not in st.session_state: st.session_state.last_pred_v45 = None
 
-def titan_engine(data):
-    # Làm sạch dữ liệu
-    raw_nums = re.findall(r'\d', data)
-    nums = [int(n) for n in raw_nums if len(raw_nums) > 0]
-    
-    if len(nums) < 30: return None, len(nums)
+# --- 2. HỆ THỐNG 7 TẦNG THUẬT TOÁN ĐỘC LẬP ---
+def analyze_7_layers(raw):
+    nums = [int(n) for n in re.findall(r'\d', raw)]
+    if len(nums) < 25: return None, len(nums)
 
-    # 1. CẬP NHẬT LỊCH SỬ (Quét 5 số cuối của sảnh)
-    if st.session_state.next_bet is not None:
-        last_results = nums[-5:]
-        if st.session_state.next_bet in last_results:
-            st.session_state.titan_log.insert(0, ("win", f"✅ TRÚNG {st.session_state.next_bet}"))
+    # Check kết quả tự động
+    if st.session_state.last_pred_v45 is not None:
+        if st.session_state.last_pred_v45 in nums[-5:]:
+            st.session_state.log_v45.insert(0, ("win", f"✅ KỲ VỪA RỒI: TRÚNG {st.session_state.last_pred_v45}"))
         else:
-            st.session_state.titan_log.insert(0, ("loss", f"❌ TRƯỢT {st.session_state.next_bet}"))
-        st.session_state.next_bet = None
+            st.session_state.log_v45.insert(0, ("loss", f"❌ KỲ VỪA RỒI: TRƯỢT {st.session_state.last_pred_v45}"))
+        st.session_state.last_pred_v45 = None
 
-    # 2. HỆ THỐNG LỌC 3 LỚP (TRIPLE-FILTER)
-    scored = []
+    scores = []
+    total = len(nums)
     last_val = nums[-1]
-    last_10 = nums[-10:]
-    freq = Counter(nums[-40:]) # Quét rộng 40 kỳ để tìm nhịp
+    last_5 = nums[-5:]
+    counts = Counter(nums[-40:])
 
     for n in range(10):
-        score = 0
-        # Tính khoảng cách (Gap)
+        s = 0
         gap = 0
         for i, v in enumerate(reversed(nums[:-1])):
             if v == n: break
             gap += 1
-        
-        # Lớp 1: Nhịp hồi kỹ thuật (Chỉ bắt nhịp 4-9)
-        if 4 <= gap <= 9: score += 35
-        # Lớp 2: Điểm hội tụ toán học (Tổng & Bóng)
-        if n == (sum(nums[-3:]) % 10): score += 20
-        if n == {0:5, 1:6, 2:7, 3:8, 4:9, 5:0, 6:1, 7:2, 8:3, 9:4}.get(last_val): score += 15
-        # Lớp 3: Tần suất an toàn (Tránh số nổ quá nhiều > 6 lần)
-        if 1 <= freq[n] <= 5: score += 30
 
-        # BỘ CHẶN TỬ THẦN: Loại bỏ số Gan > 12 kỳ và số vừa nổ (Tránh gãy cầu hồi)
-        if gap > 12 or gap == 0: score = 0
+        # TẦNG 1: Nhịp hồi kỹ thuật (Gap 4-8)
+        if 4 <= gap <= 8: s += 25
+        # TẦNG 2: Bóng số sảnh A (0-5, 1-6, 2-7, 3-8, 4-9)
+        if n == {0:5, 5:0, 1:6, 6:1, 2:7, 7:2, 3:8, 8:3, 4:9, 9:4}.get(last_val): s += 15
+        # TẦNG 3: Tổng chạm kỳ (Sum modulo 10)
+        if n == (sum(last_5) % 10): s += 15
+        # TẦNG 4: Đối xứng Fibonacci (Nhịp 3, 5, 8)
+        if gap in [3, 5, 8]: s += 10
+        # TẦNG 5: Tần suất an toàn (Số nổ 2-4 lần trong 40 kỳ)
+        if 2 <= counts[n] <= 4: s += 15
+        # TẦNG 6: Cầu bệt linh hoạt (Repeat detection)
+        if n == last_val and nums[-1] == nums[-2]: s += 10
+        # TẦNG 7: Cầu đảo lùi 2 bước
+        if n == (nums[-2] + 1) % 10: s += 10
+
+        # BỘ LỌC CHỐNG GAN: Loại bỏ tuyệt đối số > 13 kỳ chưa về
+        if gap > 13: s = 0 
         
-        scored.append({'n': n, 's': score})
+        scores.append({'n': n, 's': round(s, 1)})
     
-    return sorted(scored, key=lambda x: x['s'], reverse=True), nums
+    return sorted(scores, key=lambda x: x['s'], reverse=True), nums
 
-# --- GIAO DIỆN ĐIỀU KHIỂN ---
-st.title("🌑 TITAN BLACK v5.0")
-input_data = st.text_area("DÁN DỮ LIỆU CẦU MỚI NHẤT:", height=100, help="Dán ít nhất 30 số")
+# --- 3. GIAO DIỆN VẬN HÀNH ---
+st.title("🛡️ AI v4.5 PLATINUM")
+input_data = st.text_area("DÁN DỮ LIỆU CẦU (S-PEN):", height=100)
 
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("🔥 PHÂN TÍCH TITAN"):
-        res, info = titan_engine(input_data)
+c1, c2 = st.columns(2)
+with c1:
+    if st.button("🚀 PHÂN TÍCH 7 TẦNG"):
+        res, info = analyze_7_layers(input_data)
         if res:
-            st.session_state.next_bet = res[0]['n']
-            st.session_state.results = res
+            st.session_state.last_pred_v45 = res[0]['n']
+            st.session_state.res_v45 = res
         else:
-            st.error(f"Dữ liệu yếu! Cần 30 số (Hiện có {info})")
-
-with col2:
-    if st.button("♻️ RESET HỆ THỐNG"):
-        st.session_state.titan_log = []
-        st.session_state.next_bet = None
+            st.error(f"Cần 25 số (Hiện có {info})")
+with c2:
+    if st.button("🗑️ RESET"):
+        st.session_state.log_v45 = []
+        st.session_state.last_pred_v45 = None
         st.rerun()
 
-# --- HIỂN THỊ KẾT QUẢ ---
-if 'results' in st.session_state:
-    r = st.session_state.results
-    conf = r[0]['s']
-    color = "#00FF00" if conf >= 70 else ("#FFD700" if conf >= 50 else "#FF4B2B")
+if 'res_v45' in st.session_state:
+    r = st.session_state.res_v45
     
     st.markdown(f"""
-        <div class="card">
-            <div style="color:#888; letter-spacing:2px;">BẠCH THỦ ĐỘC ĐẮC</div>
-            <div class="big-num">{r[0]['n']}</div>
-            <div class="reliability" style="color:{color};">ĐỘ TIN CẬY: {conf}%</div>
+        <div class="card-bt">
+            <div style="color:#888; font-size:16px; letter-spacing:3px;">BẠCH THỦ 7 TẦNG</div>
+            <div class="val-bt">{r[0]['n']}</div>
+            <div style="color:#00FF00; font-size:20px; font-weight:bold; margin-top:10px;">ĐIỂM HỘI TỤ: {r[0]['s']}%</div>
         </div>
     """, unsafe_allow_html=True)
     
-    c_x2, c_x3 = st.columns(2)
-    with c_x2:
-        st.markdown(f'<div class="xien-box"><small>XIÊN 2</small><div class="xien-val">{r[0]["n"]}-{r[1]["n"]}</div></div>', unsafe_allow_html=True)
-    with c_x3:
-        st.markdown(f'<div class="xien-box"><small>XIÊN 3</small><div class="xien-val">{r[0]["n"]}-{r[1]["n"]}-{r[2]["n"]}</div></div>', unsafe_allow_html=True)
+    col_x2, col_x3 = st.columns(2)
+    with col_x2:
+        st.markdown(f'<div class="xien-item"><div class="xien-label">XIÊN 2</div><div class="xien-val">{r[0]["n"]}-{r[1]["n"]}</div></div>', unsafe_allow_html=True)
+    with col_x3:
+        st.markdown(f'<div class="xien-item"><div class="xien-label">XIÊN 3</div><div class="xien-val">{r[0]["n"]}-{r[1]["n"]}-{r[2]["n"]}</div></div>', unsafe_allow_html=True)
 
-    if conf < 60:
-        st.error("🚨 CẢNH BÁO: Cầu đang nhiễu cực độ. Tỉ lệ thắng thấp, hãy chờ nhịp sau!")
-    else:
-        st.success("✅ Nhịp cầu đủ tiêu chuẩn an toàn. Có thể vào tiền.")
-
-# Lịch sử thắng thua
-st.markdown("### 📋 NHẬT KÝ CHIẾN TRƯỜNG")
-for style, text in st.session_state.titan_log[:10]:
-    st.markdown(f'<div class="{style}">{text}</div>', unsafe_allow_html=True)
+st.markdown("---")
+for style, txt in st.session_state.log_v45[:10]:
+    st.markdown(f'<div class="log-{style}">{txt}</div>', unsafe_allow_html=True)
