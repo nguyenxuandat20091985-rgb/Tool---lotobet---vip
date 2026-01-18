@@ -1,119 +1,124 @@
 import streamlit as st
-import pandas as pd
 import re
 from collections import Counter
 
-# --- 1. CẤU HÌNH HỆ THỐNG & GIAO DIỆN ---
-st.set_page_config(page_title="AI SUPREME v4.5 ELITE", layout="centered")
+# --- 1. CẤU HÌNH GIAO DIỆN CHUYÊN NGHIỆP ---
+st.set_page_config(page_title="AI SUPREME v4.6 SAFE MODE", layout="centered")
 
 st.markdown("""
     <style>
-    .main { background-color: #000000; color: #ffffff; }
-    .stTextArea textarea { background-color: #111; color: #00FF00; border: 1px solid #444; font-size: 18px !important; }
-    .stButton>button { width: 100%; background: linear-gradient(to right, #ff4b2b, #ff416c); color: white; border: none; font-weight: bold; height: 50px; }
-    .result-box { padding: 20px; border-radius: 15px; background: #1a1a1a; border: 2px solid #333; margin-top: 15px; }
-    .highlight-score { font-size: 40px; font-weight: bold; color: #FF0000; text-align: center; }
-    .label-custom { font-size: 14px; color: #888; margin-bottom: 5px; }
+    .main { background-color: #050505; color: #ffffff; }
+    .predict-container {
+        background: linear-gradient(145deg, #0f0f0f, #1a1a1a);
+        padding: 15px; border-radius: 15px; border: 1px solid #222;
+        text-align: center; margin-bottom: 10px; box-shadow: 0px 4px 15px rgba(0,255,0,0.05);
+    }
+    .bt-number { font-size: 50px; color: #00FF00; font-weight: bold; line-height: 1; }
+    .safe-badge { background: #004d00; color: #00ff00; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    .log-win { color: #00ff00; font-size: 13px; border-left: 3px solid #00ff00; padding-left: 10px; margin-bottom: 4px; }
+    .log-loss { color: #ff4b2b; font-size: 13px; border-left: 3px solid #ff4b2b; padding-left: 10px; margin-bottom: 4px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. THUẬT TOÁN XỬ LÝ DỮ LIỆU THÔNG MINH (SMART ANALYTICS) ---
-def clean_and_format_data(raw_input):
-    """Lọc bỏ mã kỳ, ký tự lạ, chỉ giữ lại số đơn lẻ (0-9)"""
-    # Khử các dãy số kỳ dài (ví dụ: 260118396)
-    data_no_sessions = re.sub(r'\d{6,}', ' ', raw_input)
-    # Lấy tất cả các chữ số từ 0-9
-    numbers = re.findall(r'\d', data_no_sessions)
-    return [int(n) for n in numbers]
+if 'log' not in st.session_state: st.session_state.log = []
+if 'last_pred' not in st.session_state: st.session_state.last_pred = None
 
-def calculate_ai_logic(numbers):
-    """Thuật toán Điểm Nổ chuyên sâu cho Sảnh A"""
-    if not numbers: return None
-    
-    total_len = len(numbers)
-    counts = Counter(numbers)
-    
-    # Tìm nhịp vắng (Gap) - Cực kỳ quan trọng cho Sảnh A
-    last_positions = {i: -1 for i in range(10)}
-    for idx, val in enumerate(numbers):
-        last_positions[val] = idx
-        
-    results = []
-    for num in range(10):
-        freq = counts[num]
-        # Khoảng cách từ lần cuối xuất hiện đến hiện tại
-        gap = (total_len - 1) - last_positions[num]
-        
-        # Công thức Điểm Nổ v4.5: (Tần suất * Hệ số) + Thưởng nhịp vắng + Ưu tiên số 0
-        score = (freq * 1.2) 
-        if 3 <= gap <= 6: score += 12  # Nhịp vàng sảnh A
-        if num == 0 and gap > 2: score += 5 # Ưu tiên số 0 (Cầu hồi)
-        if gap > 12: score -= 15 # Cầu quá khan, nên bỏ
-        
-        results.append({'num': num, 'score': round(max(0, score), 2)})
-    
-    return sorted(results, key=lambda x: x['score'], reverse=True)
+BONG = {0:5, 5:0, 1:6, 6:1, 2:7, 7:2, 3:8, 8:3, 4:9, 9:4}
 
-# --- 3. GIAO DIỆN NGƯỜI DÙNG (USER INTERFACE) ---
-st.title("🤖 AI SUPREME v4.5")
-st.markdown("<p style='text-align: center; color: #888;'>SẢNH A ELITE | AUTO-FILTER | XIÊN 3</p>", unsafe_allow_html=True)
+# --- 2. THUẬT TOÁN ĐỘ NHẠY AN TOÀN (SAFE LOGIC) ---
+def analyze_safe(raw_input):
+    # Lọc số chuẩn
+    nums = [int(n) for n in re.findall(r'\d', re.sub(r'\d{6,}', ' ', raw_input))]
+    if not nums: return None, None
 
-# Khung nạp dữ liệu
-with st.container():
-    st.markdown("<div class='label-custom'>📥 NẠP DỮ LIỆU (QUÉT S-PEN DỌC/NGANG):</div>", unsafe_allow_html=True)
-    input_text = st.text_area("", placeholder="Dán kết quả tại đây...", height=120, label_visibility="collapsed")
-    
-    col_run, col_reset = st.columns([3, 1])
-    with col_run:
-        btn_active = st.button("🚀 KÍCH HOẠT HỆ THỐNG")
-    with col_reset:
-        if st.button("🔄"):
-            st.rerun()
-
-# --- 4. HIỂN THỊ KẾT QUẢ ---
-if btn_active and input_text:
-    data = clean_and_format_data(input_text)
-    
-    if len(data) < 5:
-        st.error("Dữ liệu quá ngắn! Hãy quét thêm ít nhất 5-10 kỳ.")
-    else:
-        results = calculate_ai_logic(data)
-        top1 = results[0]
-        top2 = results[1]
-        top3 = results[2]
-        
-        # Vùng hiển thị Bạch Thủ & Điểm Nổ
-        st.markdown(f"""
-            <div class='result-box'>
-                <div style='text-align: center; color: #888;'>🎯 BẠCH THỦ TIỀM NĂNG</div>
-                <div style='text-align: center; font-size: 60px; font-weight: bold; color: #00FF00;'>{top1['num']}</div>
-                <div class='highlight-score'>ĐIỂM NỔ: {top1['score']}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Vùng hiển thị Xiên
-        st.markdown("---")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"""
-                <div style='background: #111; padding: 15px; border-radius: 10px; border: 1px solid #444; text-align: center;'>
-                    <div style='color: #888; font-size: 12px;'>✨ XIÊN 2</div>
-                    <div style='font-size: 22px; font-weight: bold; color: #00CCFF;'>{top1['num']} - {top2['num']}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with c2:
-            st.markdown(f"""
-                <div style='background: #111; padding: 15px; border-radius: 10px; border: 1px solid #444; text-align: center;'>
-                    <div style='color: #888; font-size: 12px;'>🏆 XIÊN 3</div>
-                    <div style='font-size: 22px; font-weight: bold; color: #FFD700;'>{top1['num']} - {top2['num']} - {top3['num']}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        # Lệnh thực chiến dựa trên Điểm Nổ
-        st.markdown("<br>", unsafe_allow_html=True)
-        if top1['score'] >= 20:
-            st.success("🔥 LỆNH: VÀO TIỀN MẠNH (TỰ TIN >85%)")
-        elif top1['score'] >= 12:
-            st.warning("⚡ LỆNH: VÀO TIỀN VỪA PHẢI")
+    # TỰ ĐỘNG CHECK KẾT QUẢ
+    if st.session_state.last_pred is not None:
+        if nums[-1] == st.session_state.last_pred:
+            st.session_state.log.insert(0, f"✅ Số {st.session_state.last_pred} - THẮNG")
         else:
-            st.info("⏳ LỆNH: ĐỢI NHỊP CẦU ĐẸP HƠN")
+            st.session_state.log.insert(0, f"❌ Số {st.session_state.last_pred} - THUA")
+        st.session_state.last_pred = None
+
+    if len(nums) < 15: return None, nums # Cần ít nhất 15 số để soi cầu an toàn
+
+    counts = Counter(nums)
+    last_val = nums[-1]
+    last_sum = sum(nums[-5:]) % 10
+    last_pos = {i: -1 for i in range(10)}
+    for i, v in enumerate(nums): last_pos[v] = i
+    
+    scored = []
+    total = len(nums)
+    for n in range(10):
+        gap = (total - 1) - last_pos[n]
+        # HỆ SỐ AN TOÀN CAO:
+        s = (counts[n] * 0.5) # Giảm trọng số tần suất đơn thuần
+        
+        # Chỉ cộng điểm mạnh nếu rơi vào nhịp hồi vàng 4-9
+        if 4 <= gap <= 9: s += 30 
+        
+        # Phải trùng bóng hoặc trùng tổng mới được cộng thêm điểm lớn
+        if n == BONG.get(last_val): s += 10
+        if n == last_sum: s += 10
+        
+        # Trừ điểm nặng nếu số quá khan (gan) trên 15 kỳ
+        if gap > 15: s -= 25
+        
+        scored.append({'n': n, 's': round(s, 1)})
+    
+    return sorted(scored, key=lambda x: x['s'], reverse=True), nums
+
+# --- 3. GIAO DIỆN ---
+st.title("🛡️ AI SUPREME v4.6 SAFE")
+st.markdown("<span class='safe-badge'>CHẾ ĐỘ AN TOÀN ĐANG BẬT</span>", unsafe_allow_html=True)
+
+input_data = st.text_area("Dán kết quả mới nhất (S-Pen):", height=80, label_visibility="collapsed")
+
+if st.button("🚀 PHÂN TÍCH AN TOÀN"):
+    results, clean_nums = analyze_safe(input_data)
+    if results:
+        st.session_state.last_pred = results[0]['n']
+        st.session_state.current_res = results
+    else:
+        st.error("Dữ liệu quá mỏng! Hãy dán ít nhất 15-20 số gần nhất.")
+
+if 'current_res' in st.session_state:
+    res = st.session_state.current_res
+    score = res[0]['s']
+    
+    st.markdown(f"""
+        <div class="predict-container">
+            <div style="color:#888; font-size:12px;">BẠCH THỦ TIỀM NĂNG</div>
+            <div class="bt-number">{res[0]['n']}</div>
+            <div style="color:{'#00FF00' if score > 35 else '#FFBB00'}; font-weight:bold;">
+                MỨC ĐỘ TIN CẬY: {score}%
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Lệnh thực chiến an toàn
+    if score > 40:
+        st.success("🔥 CẦU RẤT ĐẸP: VÀO TIỀN ĐƯỢC")
+    elif score > 25:
+        st.warning("⚠️ CẦU TRUNG BÌNH: ĐÁNH NHẸ TAY")
+    else:
+        st.info("⏳ CẦU XẤU: NÊN ĐỨNG NGOÀI QUAN SÁT")
+
+# --- 4. THỐNG KÊ WIN/LOSS ---
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("✅ THẮNG"): st.session_state.log.insert(0, "✅ Thắng (Thủ công)"); st.rerun()
+with col2:
+    if st.button("❌ THUA"): st.session_state.log.insert(0, "❌ Thua (Thủ công)"); st.rerun()
+with col3:
+    if st.button("🗑️ RESET"): st.session_state.log = []; st.rerun()
+
+# Hiển thị LOG
+for item in st.session_state.log[:10]:
+    style = "log-win" if "✅" in item else "log-loss"
+    st.markdown(f'<div class="{style}">{item}</div>', unsafe_allow_html=True)
+
+# Cảnh báo gãy cầu
+if len(st.session_state.log) >= 3 and all("❌" in x for x in st.session_state.log[:3]):
+    st.error("🚨 CẢNH BÁO: THUA 3 VÁN. DỪNG CHƠI NGAY HÔM NAY!")
