@@ -1,180 +1,170 @@
 import streamlit as st
 import re
-import itertools
-import random
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import datetime
 
-# ================== CẤU HÌNH ==================
-st.set_page_config(page_title="LOTOBET 2 SỐ 5 TINH v6.6", layout="centered")
-
-# Thu nhỏ TAB cho Android
-st.markdown("""
-<style>
-div[data-baseweb="tab-list"] button {
-    font-size: 13px;
-    padding: 6px 10px;
-}
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(
+    page_title="LOTOBET 2 SỐ 5 TINH v6.6",
+    layout="centered"
+)
 
 # ================== SESSION ==================
-if "data_5so" not in st.session_state:
-    st.session_state.data_5so = []
+if "history" not in st.session_state:
+    st.session_state.history = []   # list of list 5 digits
+if "pair_stat" not in st.session_state:
+    st.session_state.pair_stat = defaultdict(lambda: {"hit": 0, "miss": 0})
 
-if "predict_log" not in st.session_state:
-    st.session_state.predict_log = []  # lưu lịch sử dự đoán
-
-if "pair_state" not in st.session_state:
-    st.session_state.pair_state = {}  # theo dõi cầu treo
-
-# ================== CORE ==================
+# ================== FUNCTIONS ==================
 def extract_5_digits(text):
-    digits = re.findall(r"\d", text)
-    return [digits[i:i+5] for i in range(0, len(digits)-4, 5)]
-
-def is_win(pair, kq5):
-    return pair[0] in kq5 and pair[1] in kq5
-
-def calc_freq(data):
-    return Counter(itertools.chain.from_iterable(data))
-
-def score_pair(pair, freq_all, freq_recent):
-    base = freq_all[pair[0]] + freq_all[pair[1]]
-    recent = freq_recent[pair[0]] + freq_recent[pair[1]]
-    noise = random.uniform(0.9, 1.1)
-    return (base*0.6 + recent*0.4) * noise
-
-def predict_pairs(data):
-    freq_all = calc_freq(data)
-    recent = data[-30:] if len(data) > 30 else data
-    freq_recent = calc_freq(recent)
-
-    digits = list(freq_all.keys())
-    pairs = list(itertools.combinations(digits, 2))
-
-    scored = [(p, score_pair(p, freq_all, freq_recent)) for p in pairs]
-    scored.sort(key=lambda x: x[1], reverse=True)
-
-    top = scored[:6]
-    max_score = top[0][1]
-
+    nums = re.findall(r"\d", text)
     results = []
-    for p, s in top:
-        percent = int((s / max_score) * 100)
-        results.append({"pair": f"{p[0]}{p[1]}", "score": s, "percent": percent})
+    for i in range(0, len(nums), 5):
+        if len(nums[i:i+5]) == 5:
+            results.append(nums[i:i+5])
     return results
 
-def update_pair_state(predicted, kq5):
-    for item in predicted:
-        pair = item["pair"]
-        if pair not in st.session_state.pair_state:
-            st.session_state.pair_state[pair] = {"treo": 0, "win": 0, "lose": 0}
+def normalize_confidence(raw_score, miss_count):
+    penalty = max(0, miss_count - 3) * 5
+    score = raw_score - penalty
+    score = max(45, min(score, 88))
+    return round(score, 1)
 
-        if is_win(pair, kq5):
-            st.session_state.pair_state[pair]["win"] += 1
-            st.session_state.pair_state[pair]["treo"] = 0
-        else:
-            st.session_state.pair_state[pair]["lose"] += 1
-            st.session_state.pair_state[pair]["treo"] += 1
+def classify_pair(conf, miss):
+    if conf >= 75 and 2 <= miss <= 5:
+        return "HOT"
+    elif conf >= 60:
+        return "WATCH"
+    else:
+        return "SKIP"
 
-def calc_warning_score(pair, base_percent):
-    treo = st.session_state.pair_state[pair]["treo"]
-    score = base_percent * 0.5 + treo * 8
-    if treo > 7:
-        score -= 10
-    return min(int(score), 95)
+def analyze_pairs(history):
+    digit_freq = Counter()
+    pair_freq = Counter()
+
+    for row in history:
+        for d in row:
+            digit_freq[d] += 1
+        for i in range(len(row)):
+            for j in range(i + 1, len(row)):
+                pair = "".join(sorted([row[i], row[j]]))
+                pair_freq[pair] += 1
+
+    results = []
+    for pair, freq in pair_freq.most_common(20):
+        hit = st.session_state.pair_stat[pair]["hit"]
+        miss = st.session_state.pair_stat[pair]["miss"]
+
+        raw_score = freq * 3 + hit * 5 - miss * 2
+        conf = normalize_confidence(raw_score, miss)
+        ptype = classify_pair(conf, miss)
+
+        results.append({
+            "pair": pair,
+            "confidence": conf,
+            "miss": miss,
+            "type": ptype
+        })
+
+    return results[:6]
 
 # ================== UI ==================
 st.title("🎯 LOTOBET 2 SỐ 5 TINH v6.6")
-st.caption("Tool não mạnh – nuôi cầu – chuẩn sảnh A")
 
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📂 Dữ liệu",
-    "🤖 Dự đoán",
-    "📌 Chưa về",
+    "📥 Quản lý dữ liệu",
+    "🤖 Dự đoán AI",
+    "🎯 CẦN ĐÁNH",
     "📊 Thống kê"
 ])
 
 # ================== TAB 1 ==================
 with tab1:
-    raw = st.text_area("Dán kết quả mở thưởng", height=140)
+    st.subheader("Dán dữ liệu kết quả (mỗi kỳ 5 số)")
+    raw = st.text_area("Ví dụ: 15406 92831 40672 ...", height=150)
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("💾 LƯU KỲ"):
-            chunks = extract_5_digits(raw)
-            if chunks:
-                st.session_state.data_5so.extend(chunks)
-                st.success(f"Đã lưu {len(chunks)} kỳ")
+        if st.button("💾 LƯU DỮ LIỆU"):
+            rows = extract_5_digits(raw)
+            if rows:
+                st.session_state.history.extend(rows)
+                st.success(f"Đã lưu {len(rows)} kỳ")
             else:
-                st.warning("Không đủ 5 số")
+                st.warning("Không nhận diện được dữ liệu")
 
     with col2:
         if st.button("🗑️ XÓA SẠCH"):
-            st.session_state.data_5so = []
-            st.session_state.predict_log = []
-            st.session_state.pair_state = {}
-            st.success("Đã reset toàn bộ")
+            st.session_state.history = []
+            st.session_state.pair_stat = defaultdict(lambda: {"hit": 0, "miss": 0})
+            st.warning("Đã xóa toàn bộ dữ liệu")
 
-    st.info(f"Tổng số kỳ: {len(st.session_state.data_5so)}")
+    st.info(f"Tổng số kỳ đang có: {len(st.session_state.history)}")
 
 # ================== TAB 2 ==================
 with tab2:
-    if len(st.session_state.data_5so) < 10:
-        st.warning("Cần ít nhất 10 kỳ")
+    if len(st.session_state.history) < 5:
+        st.warning("Cần ít nhất 5 kỳ để phân tích")
     else:
-        results = predict_pairs(st.session_state.data_5so)
-
-        # lưu log
-        st.session_state.predict_log.append({
-            "ky": len(st.session_state.data_5so),
-            "pairs": [r["pair"] for r in results],
-            "detail": results
-        })
-
-        grid = st.columns(3)
-        for i, r in enumerate(results):
-            with grid[i % 3]:
-                st.markdown(f"""
-                <div style="border:2px solid #00ffcc;border-radius:12px;
-                padding:14px;text-align:center;margin-bottom:10px;background:#0e1117">
-                <div style="font-size:36px;font-weight:bold;color:#00ffcc">
-                {r['pair']}
+        results = analyze_pairs(st.session_state.history)
+        for r in results:
+            st.markdown(f"""
+            <div style="
+                background:#111;
+                border-radius:16px;
+                padding:20px;
+                margin-bottom:15px;
+                text-align:center;
+                border:2px solid #20c997;">
+                <div style="font-size:44px;color:#20c997;font-weight:800;">
+                    {r['pair']}
                 </div>
-                <div style="color:#ccc">Tin cậy: {r['percent']}%</div>
+                <div style="font-size:18px;color:#f1c40f;">
+                    Tin cậy: {r['confidence']}%
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
 # ================== TAB 3 ==================
 with tab3:
-    st.subheader("⚠️ Cặp số chưa về – nên lưu ý")
-
-    if len(st.session_state.data_5so) < 2 or not st.session_state.predict_log:
-        st.info("Chưa đủ dữ liệu")
+    if len(st.session_state.history) < 5:
+        st.warning("Chưa đủ dữ liệu")
     else:
-        # check kỳ mới nhất
-        kq5 = st.session_state.data_5so[-1]
-        last_pred = st.session_state.predict_log[-1]["detail"]
-        update_pair_state(last_pred, kq5)
+        results = analyze_pairs(st.session_state.history)
+        hot_pairs = [p for p in results if p["type"] == "HOT"]
 
-        for item in last_pred:
-            pair = item["pair"]
-            treo = st.session_state.pair_state[pair]["treo"]
-            if treo >= 3:
-                warn = calc_warning_score(pair, item["percent"])
-                label = "🚨 ƯU TIÊN" if warn >= 80 else "⚠️ CẦU NÓNG"
-                st.markdown(f"**{pair}** | Treo {treo} kỳ | Khả năng về: **{warn}%** {label}")
+        if not hot_pairs:
+            st.warning("⏳ Chưa có cầu đủ điều kiện đánh mạnh")
+        else:
+            for p in hot_pairs:
+                st.markdown(f"""
+                <div style="
+                    background:#0f5132;
+                    border-radius:18px;
+                    padding:22px;
+                    margin-bottom:18px;
+                    text-align:center;
+                    border:2px solid #20c997;">
+                    <div style="font-size:50px;color:#ff4d4d;font-weight:900;">
+                        {p['pair']}
+                    </div>
+                    <div style="font-size:22px;color:#ffd43b;">
+                        Tỷ lệ thắng: {p['confidence']}%
+                    </div>
+                    <div style="color:#ffffffcc;">
+                        Treo {p['miss']} kỳ – Ưu tiên kỳ tới ⚠️
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
 # ================== TAB 4 ==================
 with tab4:
-    if not st.session_state.pair_state:
+    st.subheader("Theo dõi cầu")
+    if not st.session_state.pair_stat:
         st.info("Chưa có thống kê")
     else:
-        win = sum(v["win"] for v in st.session_state.pair_state.values())
-        lose = sum(v["lose"] for v in st.session_state.pair_state.values())
-        total = win + lose
-        rate = int((win / total) * 100) if total > 0 else 0
+        for pair, stat in st.session_state.pair_stat.items():
+            st.write(
+                f"{pair} | Trúng: {stat['hit']} | Trượt: {stat['miss']}"
+            )
 
-        st.metric("Tổng lượt", total)
-        st.metric("Thắng", win)
-        st.metric("Win rate", f"{rate}%")
+st.caption("⚠️ Công cụ hỗ trợ phân tích – không đảm bảo 100% thắng")
