@@ -2,64 +2,69 @@ import streamlit as st
 import re
 from collections import Counter
 
-# --- 1. GIAO DIỆN MATRIX-X SIÊU NÉT ---
-st.set_page_config(page_title="MATRIX-X v5.0 SUPREME", layout="wide")
+# --- 1. GIAO DIỆN HIỆN ĐẠI & TƯƠNG PHẢN CAO ---
+st.set_page_config(page_title="TITAN-MATRIX v5.2", layout="wide")
 
 st.markdown("""
     <style>
     .main { background-color: #000; color: #fff; }
-    .stTextArea textarea { background-color: #0a0a0a; color: #00FF00; border: 2px solid #333; font-size: 20px !important; }
+    .stTextArea textarea { background-color: #050505; color: #00FF00; border: 2px solid #00FF00; font-size: 22px !important; }
     
-    /* Panel Xiên 3 dọc */
-    .x3-container { border-left: 5px solid #00FF00; padding-left: 15px; margin-bottom: 20px; }
-    .x3-card { background: #111; padding: 15px; border-radius: 12px; border: 1px solid #222; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-    .x3-num { color: #00FF00; font-size: 35px; font-weight: 900; letter-spacing: 5px; }
-    .x3-rate { color: #FFD700; font-weight: bold; border: 1px solid #FFD700; padding: 2px 10px; border-radius: 5px; }
-
-    /* Panel Xiên 4 ngang nổi bật */
-    .x4-box {
-        background: linear-gradient(90deg, #000 0%, #1a1a1a 100%);
-        padding: 30px; border-radius: 20px; border: 3px solid #FFD700;
-        text-align: center; margin: 20px 0; box-shadow: 0 0 30px rgba(255,215,0,0.2);
+    /* Thiết kế Tab Xiên 3 dọc */
+    .column-x3 { border-right: 1px solid #333; padding: 15px; }
+    .card-x3 {
+        background: #111; padding: 20px; border-radius: 15px; border-left: 10px solid #00FF00;
+        margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;
     }
-    .x4-num { color: #FFD700; font-size: 55px; font-weight: 900; letter-spacing: 12px; text-shadow: 0 0 20px #FFD700; }
-
-    /* Nhật ký theo dõi */
-    .log-win { background: rgba(0,255,0,0.1); border-left: 10px solid #00ff00; padding: 12px; margin-bottom: 8px; color: #00ff00; font-weight: bold; }
-    .log-loss { background: rgba(255,75,43,0.1); border-left: 10px solid #ff4b2b; padding: 12px; margin-bottom: 8px; color: #ff4b2b; font-weight: bold; }
+    .num-x3 { color: #00FF00; font-size: 38px; font-weight: 900; letter-spacing: 4px; }
+    
+    /* Thiết kế Xiên 4 ngang hiện đại */
+    .box-x4 {
+        background: linear-gradient(135deg, #000 0%, #1a1a1a 100%);
+        padding: 40px; border-radius: 25px; border: 4px solid #FFD700;
+        text-align: center; margin-bottom: 25px; box-shadow: 0 0 40px rgba(255,215,0,0.3);
+    }
+    .num-x4 { color: #FFD700; font-size: 70px; font-weight: 900; letter-spacing: 15px; text-shadow: 0 0 20px #FFD700; }
+    
+    /* Bảng theo dõi trúng trượt */
+    .log-win { color: #00ff00; background: rgba(0,255,0,0.1); padding: 15px; border-radius: 10px; border-left: 10px solid #00ff00; margin-bottom: 10px; font-weight: bold; font-size: 18px; }
+    .log-loss { color: #ff4b2b; background: rgba(255,75,43,0.1); padding: 15px; border-radius: 10px; border-left: 10px solid #ff4b2b; margin-bottom: 10px; font-weight: bold; font-size: 18px; }
+    .rate-tag { background: #FFD700; color: #000; padding: 3px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
-if 'matrix_log' not in st.session_state: st.session_state.matrix_log = []
-if 'current_sets' not in st.session_state: st.session_state.current_sets = None
+if 'history_matrix' not in st.session_state: st.session_state.history_matrix = []
+if 'last_sets' not in st.session_state: st.session_state.last_sets = None
 
-# --- 2. HỆ THỐNG 10 THUẬT TOÁN SONG SONG (MATRIX ENGINE) ---
-def matrix_supreme_engine(raw_input):
-    nums = [int(n) for n in re.findall(r'\d', raw_input)]
-    if len(nums) < 25: return None, len(nums)
+# --- 2. HỆ THỐNG 10 THUẬT TOÁN SONG SONG ---
+def analyze_titan(raw):
+    # Lấy 1 số cuối của các giải thưởng (đúng luật lotobet)
+    nums = [int(n) for n in re.findall(r'\d', raw)]
+    if len(nums) < 30: return None, len(nums)
 
-    # TỰ ĐỘNG ĐỐI CHIẾU TRÚNG/TRƯỢT
-    if st.session_state.current_sets is not None:
-        last_5 = nums[-5:] # Lấy 5 số vừa mở
-        sets = st.session_state.current_sets
+    # TỰ ĐỘNG CHECK KẾT QUẢ KHI CÓ DỮ LIỆU MỚI
+    if st.session_state.last_sets:
+        new_result = nums[-5:] # 5 số vừa mở của sảnh
+        sets = st.session_state.last_sets
         
-        # Kiểm tra Xiên 4
-        win_x4 = all(x in last_5 for x in sets['x4'])
-        # Kiểm tra Xiên 3 (Xem có bộ nào trúng không)
-        win_x3 = any(all(x in last_5 for x in s) for s in [sets['x3_1'], sets['x3_2'], sets['x3_3']])
+        # Check Xiên 4
+        x4_match = sum(1 for x in sets['x4'] if x in new_result)
+        # Check Xiên 3
+        x3_match = any(sum(1 for x in s if x in new_result) >= 3 for s in [sets['x3a'], sets['x3b'], sets['x3c']])
         
-        if win_x4:
-            st.session_state.matrix_log.insert(0, ("win", f"🏆 ĐỈNH CAO: TRÚNG XIÊN 4 [{''.join(map(str, sets['x4']))}]"))
-        elif win_x3:
-            st.session_state.matrix_log.insert(0, ("win", f"✅ THẮNG XIÊN 3"))
+        res_str = "".join(map(str, new_result))
+        if x4_match == 4:
+            st.session_state.history_log.insert(0, ("win", f"🏆 RỰC RỠ XIÊN 4! Giải: {res_str}"))
+        elif x3_match:
+            st.session_state.history_log.insert(0, ("win", f"✅ TRÚNG XIÊN 3! Giải: {res_str}"))
         else:
-            st.session_state.matrix_log.insert(0, ("loss", f"❌ CHƯA TRÚNG (Kỳ mở: {''.join(map(str, last_5))})"))
-        st.session_state.current_sets = None
+            st.session_state.history_log.insert(0, ("loss", f"❌ TRƯỢT (Trúng {x4_match}/4 số). Giải: {res_str}"))
+        st.session_state.last_sets = None
 
-    # TÍNH TOÁN ĐIỂM (10 THUẬT TOÁN)
+    # TÍNH TOÁN ĐIỂM 10 LỚP
     scored = []
-    freq_30 = Counter(nums[-30:])
-    last_5_res = nums[-5:]
+    freq_40 = Counter(nums[-40:])
+    last_5 = nums[-5:]
     
     for n in range(10):
         s = 0
@@ -67,77 +72,81 @@ def matrix_supreme_engine(raw_input):
         for v in reversed(nums[:-1]):
             if v == n: break
             gap += 1
-        
-        # 10 Thuật toán song song tính điểm cho từng số
-        if 4 <= gap <= 8: s += 30 # T1: Nhịp hồi
-        if n == {0:5,5:0,1:6,6:1,2:7,7:2,3:8,8:3,4:9,9:4}.get(nums[-1]): s += 15 # T2: Bóng
-        if n == (sum(last_5_res) % 10): s += 20 # T3: Tổng chạm
-        if gap in [3, 5, 8]: s += 10 # T4: Fibonacci
-        if 2 <= freq_30[n] <= 5: s += 25 # T5: Tần suất rơi
-        if n in last_5_res: s += 10 # T6: Nhịp bệt
-        if n == (nums[-1] + 1) % 10: s += 5 # T7: Tiến
-        if n == (nums[-1] - 1) % 10: s += 5 # T8: Lùi
-        if gap > 12: s -= 40 # T9: Loại trừ số Gan cực nặng
-        if freq_30[n] > 7: s -= 20 # T10: Tránh số bị "đứng" cầu do nổ quá nhiều
+            
+        # 10 THUẬT TOÁN SONG SONG
+        if 4 <= gap <= 8: s += 30                # 1. Nhịp hồi (Gap chuẩn)
+        if n == {0:5,5:0,1:6,6:1,2:7,7:2,3:8,8:3,4:9,9:4}.get(nums[-1]): s += 20 # 2. Bóng âm dương
+        if n == (sum(last_5) % 10): s += 15     # 3. Tổng chạm
+        if gap in [3, 5, 8]: s += 10            # 4. Nhịp Fibonacci
+        if 2 <= freq_40[n] <= 5: s += 25        # 5. Tần suất rơi ổn định
+        if n in last_5: s += 10                 # 6. Nhịp bệt (Repeat)
+        if n == (nums[-1] + 1) % 10: s += 5     # 7. Nhịp tiến
+        if n == (nums[-1] - 1) % 10: s += 5     # 8. Nhịp lùi
+        if gap > 13: s -= 45                    # 9. BỘ LỌC SỐ GAN (Cực quan trọng)
+        if freq_40[n] > 8: s -= 20              # 10. Né số "đứng" cầu
 
         scored.append({'n': n, 's': max(0, s)})
     
-    res = sorted(scored, key=lambda x: x['s'], reverse=True)
-    return res, nums
+    sorted_res = sorted(scored, key=lambda x: x['s'], reverse=True)
+    return sorted_res, nums
 
-# --- 3. GIAO DIỆN VẬN HÀNH ---
-st.title("🌌 MATRIX-X v5.0 SUPREME")
-st.markdown("#### Hệ thống tính toán xác suất Xiên 3 & Xiên 4 hội tụ trong 5 giải")
+# --- 3. GIAO DIỆN ĐIỀU KHIỂN ---
+st.title("🛡️ TITAN-MATRIX v5.2")
+st.markdown("##### Chuyên gia dự đoán Xiên 3 & Xiên 4 (Bao 5 Giải LotoBet)")
 
-input_data = st.text_area("NHẬP DÃY SỐ KẾT QUẢ:", height=100, placeholder="Dán dãy số từ S-Pen...")
+data_input = st.text_area("DÁN DỮ LIỆU S-PEN:", height=100)
 
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("🚀 PHÂN TÍCH HỆ THỐNG"):
-        res, info = matrix_supreme_engine(input_data)
+col_f1, col_f2 = st.columns(2)
+with col_f1:
+    if st.button("🚀 PHÂN TÍCH MATRIX"):
+        res, info = analyze_titan(data_input)
         if res:
-            # Thuật toán ghép bộ tối ưu nhất
-            st.session_state.current_sets = {
-                'x3_1': [res[0]['n'], res[1]['n'], res[2]['n']],
-                'x3_2': [res[0]['n'], res[1]['n'], res[3]['n']],
-                'x3_3': [res[0]['n'], res[2]['n'], res[4]['n']],
+            st.session_state.last_sets = {
                 'x4': [res[0]['n'], res[1]['n'], res[2]['n'], res[3]['n']],
+                'x3a': [res[0]['n'], res[1]['n'], res[2]['n']],
+                'x3b': [res[0]['n'], res[1]['n'], res[3]['n']],
+                'x3c': [res[0]['n'], res[2]['n'], res[4]['n']],
                 'scores': [res[i]['s'] for i in range(5)]
             }
-        else: st.error(f"Cần 25 số (Hiện có {info})")
-with c2:
-    if st.button("♻️ LÀM MỚI NHẬT KÝ"): 
-        st.session_state.matrix_log = []
+        else: st.error(f"Cần tối thiểu 30 số (Hiện có {info})")
+with col_f2:
+    if st.button("♻️ LÀM MỚI"):
+        st.session_state.history_log = []
+        st.session_state.last_sets = None
         st.rerun()
 
-# --- 4. HIỂN THỊ KẾT QUẢ ---
-if st.session_state.current_sets:
-    s = st.session_state.current_sets
+# --- 4. HIỂN THỊ KẾT QUẢ XIÊN 3 & 4 ---
+if st.session_state.last_sets:
+    ls = st.session_state.last_sets
     
-    # XIÊN 4 - TỔNG HỢP CAO NHẤT
+    # XIÊN 4 (Hàng ngang - Trung tâm)
     st.markdown(f"""
-        <div class="x4-box">
-            <div style="color: #FFD700; font-size: 18px; letter-spacing: 5px;">💎 BỘ TỨ XIÊN 4 (XÁC SUẤT CAO NHẤT)</div>
-            <div class="x4-num">{''.join(map(str, s['x4']))}</div>
-            <div style="color: #00FF00; font-weight:bold;">ĐỘ HỘI TỤ HỆ THỐNG: {round(sum(s['scores'][:4])/4, 1)}%</div>
+        <div class="box-x4">
+            <div style="color: #FFD700; font-size: 18px; letter-spacing: 5px; margin-bottom:10px;">💎 TỔNG HỢP XIÊN 4 MẠNH NHẤT</div>
+            <div class="num-x4">{"".join(map(str, ls['x4']))}</div>
+            <div style="margin-top:15px;"><span class="rate-tag">TỈ LỆ HỘI TỤ: {round(sum(ls['scores'][:4])/4, 1)}%</span></div>
         </div>
     """, unsafe_allow_html=True)
 
-    # XIÊN 3 - 3 CẶP DỌC
-    st.markdown("### 🎯 3 CẶP XIÊN 3 TIỀM NĂNG")
-    for i, key in enumerate(['x3_1', 'x3_2', 'x3_3']):
-        rate = round(sum(s['scores'][:3]) / 3 - (i*3), 1)
-        st.markdown(f"""
-            <div class="x3-card">
-                <div style="color:#888;">MẪU {i+1}</div>
-                <div class="x3-num">{''.join(map(str, s[key]))}</div>
-                <div class="x3-rate">TỈ LỆ THẮNG: {rate}%</div>
-            </div>
-        """, unsafe_allow_html=True)
+    # XIÊN 3 (3 Mẫu - Tab Dọc)
+    st.markdown("### 🎯 DANH SÁCH XIÊN 3 TIỀM NĂNG")
+    col_x3a, col_x3b, col_x3c = st.columns(3)
+    for i, (col, key) in enumerate(zip([col_x3a, col_x3b, col_x3c], ['x3a', 'x3b', 'x3c'])):
+        with col:
+            rate_x3 = round(sum(ls['scores'][:3])/3 - (i*2), 1)
+            st.markdown(f"""
+                <div class="card-x3">
+                    <div>
+                        <small style="color:#888;">MẪU {i+1}</small><br>
+                        <span class="num-x3">{"".join(map(str, ls[key]))}</span>
+                    </div>
+                    <div style="color:#FFD700; font-weight:bold;">{rate_x3}%</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-# --- 5. BẢNG THEO DÕI ---
+# --- 5. BẢNG THEO DÕI DỰ ĐOÁN ---
 st.markdown("---")
-st.markdown("### 📋 BẢNG THEO DÕI TRÚNG / TRƯỢT")
-for style, text in st.session_state.matrix_log[:15]:
-    cls = "log-win" if style == "win" else "log-loss"
-    st.markdown(f'<div class="{cls}">{text}</div>', unsafe_allow_html=True)
+st.markdown("### 📋 NHẬT KÝ KIỂM CHỨNG (TRÚNG / TRƯỢT)")
+if 'history_log' not in st.session_state: st.session_state.history_log = []
+for type_log, text in st.session_state.history_log[:15]:
+    st.markdown(f'<div class="log-{type_log}">{text}</div>', unsafe_allow_html=True)
