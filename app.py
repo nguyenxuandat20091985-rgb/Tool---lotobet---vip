@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
-import re
 from collections import Counter
 from datetime import datetime
+import os
+import random
 
 # ================== CONFIG ==================
 st.set_page_config(
@@ -10,149 +11,162 @@ st.set_page_config(
     layout="centered"
 )
 
-# ================== SESSION ==================
-if "data" not in st.session_state:
-    st.session_state.data = []
+DATA_FILE = "data.csv"
 
-if "history" not in st.session_state:
-    st.session_state.history = {}
+# ================== DATA ==================
+def load_data():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    return pd.DataFrame(columns=["time", "numbers"])
 
-# ================== FUNCTIONS ==================
-def extract_digits(text):
-    nums = re.findall(r"\d", text)
-    return nums
+def save_data(nums):
+    df = load_data()
+    df = pd.concat([
+        df,
+        pd.DataFrame([{
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "numbers": nums
+        }])
+    ], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
 
-def build_pairs(digits):
-    pairs = []
-    for i in range(len(digits)):
-        for j in range(i + 1, len(digits)):
-            pairs.append(digits[i] + digits[j])
-    return pairs
+def parse_numbers(df):
+    all_nums = []
+    for row in df["numbers"]:
+        all_nums.extend([int(x) for x in str(row)])
+    return all_nums
 
-def algorithm_frequency(data):
-    all_digits = []
-    for row in data:
-        all_digits.extend(row)
-    return Counter(all_digits)
+# ================== ALGORITHMS ==================
+def algo_frequency(nums):
+    return Counter(nums)
 
-def algorithm_gap(data):
-    last_seen = {}
-    score = Counter()
-    for idx, row in enumerate(data):
-        for d in row:
-            last_seen[d] = idx
-    total = len(data)
-    for d in "0123456789":
-        score[d] = total - last_seen.get(d, -1)
-    return score
+def algo_gap(df):
+    gap = {}
+    for n in range(10):
+        last = df[df["numbers"].str.contains(str(n))]
+        gap[n] = len(df) if last.empty else len(df) - last.index[-1]
+    return gap
 
-def ensemble_score(data):
-    freq = algorithm_frequency(data)
-    gap = algorithm_gap(data)
+def algo_pair_support(df):
+    pair_count = Counter()
+    for row in df["numbers"]:
+        digits = list(set(str(row)))
+        for d in digits:
+            pair_count[int(d)] += 1
+    return pair_count
 
-    final = Counter()
-    for d in "0123456789":
-        final[d] = freq[d] * 0.6 + gap[d] * 0.4
-    return final
+# ================== CORE AI ==================
+def predict(df):
+    nums = parse_numbers(df)
 
-def predict_pairs(data):
-    score = ensemble_score(data)
-    pairs = Counter()
+    freq = algo_frequency(nums)
+    gap = algo_gap(df)
+    pair = algo_pair_support(df)
 
-    for d1 in score:
-        for d2 in score:
-            if d1 != d2:
-                pairs[d1 + d2] = score[d1] + score[d2]
+    score = {}
+    for n in range(10):
+        score[n] = (
+            freq.get(n, 0) * 0.4 +
+            gap.get(n, 0) * 0.35 +
+            pair.get(n, 0) * 0.25
+        )
 
-    top = pairs.most_common(6)
-    return top
+    ranked = sorted(score.items(), key=lambda x: x[1], reverse=True)
+
+    # ===== 5 số dự đoán chung =====
+    common = [x[0] for x in ranked[:5]]
+
+    # ===== SỐ PHÁ KỲ (AI RIÊNG) =====
+    # điều kiện: gap cao + không nằm trong top tần suất
+    freq_rank = [x[0] for x in freq.most_common(5)]
+    break_candidates = [
+        n for n in range(10)
+        if gap.get(n, 0) >= sum(gap.values()) / 10 and n not in freq_rank
+    ]
+
+    if break_candidates:
+        ai_break = max(break_candidates, key=lambda x: gap[x])
+    else:
+        ai_break = ranked[5][0]
+
+    return common, ai_break, score
 
 # ================== UI ==================
 st.title("🎯 LOTOBET 2 SỐ 5 TINH v6.6")
+st.caption("Phân tích đủ 5 số – Vá SỐ PHÁ KỲ – Thực chiến")
 
-tabs = st.tabs(["📥 Quản lý dữ liệu", "🤖 Dự đoán AI", "📊 Thống kê"])
+tab1, tab2, tab3 = st.tabs([
+    "📥 Quản lý dữ liệu",
+    "🤖 Dự đoán AI",
+    "📊 Thống kê"
+])
 
-# ================== TAB 1 ==================
-with tabs[0]:
-    st.subheader("Dán kết quả (mỗi kỳ 5 số)")
-    raw = st.text_area("Ví dụ: 15406", height=120)
+# -------- TAB 1 --------
+with tab1:
+    st.subheader("Nhập kết quả (mỗi kỳ 5 số)")
+    txt = st.text_area("Ví dụ: 12345", height=120)
 
     if st.button("💾 LƯU DỮ LIỆU"):
-        digits = extract_digits(raw)
-        if len(digits) >= 5:
-            chunks = [digits[i:i+5] for i in range(0, len(digits), 5)]
-            st.session_state.data.extend(chunks)
-            st.success(f"Đã lưu {len(chunks)} kỳ")
-        else:
-            st.error("Không đủ dữ liệu")
+        lines = [x.strip() for x in txt.splitlines() if len(x.strip()) == 5]
+        for line in lines:
+            save_data(line)
+        st.success(f"Đã lưu {len(lines)} kỳ")
 
-    if st.button("🗑️ XÓA SẠCH"):
-        st.session_state.data = []
-        st.session_state.history = {}
+    df = load_data()
+    st.info(f"Tổng số kỳ: {len(df)}")
+
+    if st.button("🗑 XÓA SẠCH"):
+        if os.path.exists(DATA_FILE):
+            os.remove(DATA_FILE)
         st.warning("Đã xóa toàn bộ dữ liệu")
 
-    st.info(f"Tổng số kỳ đã lưu: {len(st.session_state.data)}")
-
-# ================== TAB 2 ==================
-with tabs[1]:
-    if len(st.session_state.data) < 5:
-        st.warning("Cần tối thiểu 5 kỳ để dự đoán")
+# -------- TAB 2 --------
+with tab2:
+    df = load_data()
+    if len(df) < 10:
+        st.warning("Cần ít nhất 10 kỳ dữ liệu")
     else:
-        result = predict_pairs(st.session_state.data)
+        common, ai_break, score = predict(df)
 
-        ai_main = result[0]
-        others = result[1:]
+        st.markdown("## 🎯 5 SỐ DỰ ĐOÁN CHUNG")
+        for n in common:
+            st.markdown(
+                f"""
+                <div style="background:#0b1220;padding:15px;border-radius:15px;
+                border:2px solid #00ffc6;margin-bottom:10px;text-align:center">
+                <h1 style="color:#00e0ff">{n}</h1>
+                <p style="color:gold">Tin cậy: {min(90, int(score[n]))}%</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-        st.markdown("## 🔥 SỐ AI ƯU TIÊN CAO")
+        st.markdown("## 🤖 SỐ AI RIÊNG – ƯU TIÊN CAO")
         st.markdown(
             f"""
-            <div style='background:#0f172a;padding:25px;border-radius:16px;
-            text-align:center;border:3px solid #22c55e'>
-            <div style='font-size:52px;color:#22c55e;font-weight:bold'>
-            {ai_main[0]}
-            </div>
-            <div style='font-size:20px;color:#facc15'>
-            Tin cậy: {round(70 + ai_main[1] % 30)}%
-            </div>
+            <div style="background:#001a0f;padding:20px;border-radius:20px;
+            border:3px solid #00ff66;text-align:center">
+            <h1 style="color:red">{ai_break}</h1>
+            <p style="color:gold;font-size:20px">SỐ PHÁ KỲ – KHẢ NĂNG CAO</p>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        st.markdown("### 🎯 5 SỐ DỰ ĐOÁN CHUNG")
-        cols = st.columns(2)
-        for idx, (pair, score) in enumerate(others):
-            with cols[idx % 2]:
-                st.markdown(
-                    f"""
-                    <div style='background:#020617;padding:18px;
-                    border-radius:14px;text-align:center;
-                    border:2px solid #38bdf8'>
-                    <div style='font-size:34px;color:#38bdf8;font-weight:bold'>
-                    {pair}
-                    </div>
-                    <div style='color:#facc15'>
-                    Tin cậy: {round(55 + score % 25)}%
-                    </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+# -------- TAB 3 --------
+with tab3:
+    df = load_data()
+    if df.empty:
+        st.info("Chưa có dữ liệu")
+    else:
+        nums = parse_numbers(df)
+        c = Counter(nums)
+        st.subheader("Tần suất xuất hiện")
+        st.dataframe(pd.DataFrame(c.items(), columns=["Số", "Số lần"]).sort_values("Số"))
 
-# ================== TAB 3 ==================
-with tabs[2]:
-    st.subheader("📊 Thống kê tổng quan")
-
-    total = len(st.session_state.data)
-    st.metric("Tổng số kỳ", total)
-
-    st.markdown("### Ghi chú")
-    st.write(
-        """
-        - Thống kê dùng để **đánh giá hiệu quả**, không dùng để đánh số  
-        - Ưu tiên theo **SỐ AI RIÊNG**  
-        - 5 số còn lại dùng **bọc – phòng trượt**
-        """
-    )
-
-    st.success("v6.6 – Thuật toán đa lớp – Ổn định Android")
+        st.subheader("Gợi ý sử dụng")
+        st.markdown("""
+        - Ưu tiên **SỐ AI RIÊNG**
+        - Kết hợp 1–2 số trong **5 số chung**
+        - Tránh đánh dàn rộng
+        """)
