@@ -1,168 +1,137 @@
 import streamlit as st
 import pandas as pd
-import random
 import re
 import os
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime
+import random
 
-# ================== CONFIG ==================
+# ================== CẤU HÌNH ==================
 st.set_page_config(
-    page_title="LOTOBET 2 SỐ 5 TINH v6.6",
+    page_title="LOTOBET 2 SỐ 5 TỈNH v6.6",
     layout="centered"
 )
 
 DATA_FILE = "data.csv"
 
-# ================== DATA ==================
+# ================== HÀM DỮ LIỆU ==================
 def load_data():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE)
-    return pd.DataFrame(columns=["time", "numbers"])
+    return pd.DataFrame(columns=["time", "result"])
 
-def save_data(numbers):
+def save_data(num):
     df = load_data()
-    new = pd.DataFrame([{
+    df.loc[len(df)] = {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "numbers": numbers
-    }])
-    df = pd.concat([df, new], ignore_index=True)
+        "result": num
+    }
     df.to_csv(DATA_FILE, index=False)
 
 def clear_data():
     if os.path.exists(DATA_FILE):
         os.remove(DATA_FILE)
 
-# ================== PARSE ==================
-def parse_numbers(df):
-    all_nums = []
-    for row in df["numbers"]:
-        if isinstance(row, str):
-            digits = re.findall(r"\d", row)
-            all_nums.extend([int(x) for x in digits])
-    return all_nums
+# ================== THUẬT TOÁN ==================
+def algo_frequency(data):
+    digits = "".join(data)
+    return [x[0] for x in Counter(digits).most_common(5)]
 
-# ================== AI CORE ==================
-def predict(df):
-    total_draws = len(df)
-    if total_draws < 20:
-        return None, None, None
+def algo_recent(data):
+    return list("".join(data[-20:]))[:5]
 
-    nums = parse_numbers(df)
-    freq = Counter(nums)
+def algo_random():
+    return [str(random.randint(0,9)) for _ in range(5)]
 
-    # Nhịp rơi
-    gap = {}
-    for n in range(10):
-        idx = df[df["numbers"].astype(str).str.contains(str(n), na=False)].index
-        gap[n] = total_draws - idx.max() if len(idx) > 0 else total_draws + 10
+def merge_algorithms(data):
+    pool = []
+    pool += algo_frequency(data)
+    pool += algo_recent(data)
+    pool += algo_random()
+    return [x[0] for x in Counter(pool).most_common(5)]
 
-    score = defaultdict(float)
+def ai_break_cycle(data):
+    used = set("".join(data[-10:]))
+    for i in range(100):
+        n = f"{random.randint(0,99):02d}"
+        if n[0] not in used or n[1] not in used:
+            return n
+    return f"{random.randint(0,99):02d}"
 
-    # Thuật toán 1: tần suất
-    for n, v in freq.items():
-        score[n] += v * 1.2
-
-    # Thuật toán 2: nhịp rơi
-    for n, g in gap.items():
-        score[n] += max(0, 28 - g)
-
-    # Thuật toán 3: cân bằng âm dương (random có kiểm soát)
-    for n in random.sample(range(10), 5):
-        score[n] += 6
-
-    ranked = sorted(score.items(), key=lambda x: x[1], reverse=True)
-
-    main_nums = [n for n, _ in ranked[:5]]
-    ai_break = ranked[5][0]
-
-    # Ghép 2D
-    pairs = []
-    for i in range(len(main_nums)):
-        for j in range(i + 1, len(main_nums)):
-            pairs.append(f"{main_nums[i]}{main_nums[j]}")
-    random.shuffle(pairs)
-    pairs = pairs[:6]
-
-    confidence = min(85, 55 + total_draws // 120)
-
-    return pairs, ai_break, confidence
-
-# ================== UI ==================
-st.title("🎯 LOTOBET 2 SỐ 5 TINH v6.6")
+# ================== GIAO DIỆN ==================
+st.title("🔥 LOTO BET 2 SỐ 5 TỈNH v6.6")
 st.caption("Phân tích đủ 5 số – Ổn định – Không sập dữ liệu lớn")
 
 tab1, tab2, tab3 = st.tabs([
     "📥 Quản lý dữ liệu",
-    "🤖 Dự đoán AI",
+    "🎯 Dự đoán AI",
     "📊 Thống kê"
 ])
 
-# ---------- TAB 1 ----------
+# ================== TAB 1 ==================
 with tab1:
-    st.subheader("Dán kết quả (mỗi kỳ 5 số)")
-    numbers = st.text_area("Ví dụ: 12345", height=120)
+    st.subheader("Dán kết quả (mỗi dòng đúng 5 số)")
+    raw = st.text_area(
+        "Ví dụ:\n12345\n67890",
+        height=180
+    )
 
     if st.button("💾 LƯU DỮ LIỆU"):
-        if re.fullmatch(r"\d{5}", numbers.strip()):
-            save_data(numbers.strip())
-            st.success("Đã lưu 1 kỳ")
-        else:
-            st.error("Sai định dạng – cần đúng 5 số")
+        lines = [x.strip() for x in raw.splitlines() if x.strip()]
+        valid, invalid = [], []
+
+        for line in lines:
+            if re.fullmatch(r"\d{5}", line):
+                valid.append(line)
+            else:
+                invalid.append(line)
+
+        for v in valid:
+            save_data(v)
+
+        if valid:
+            st.success(f"✅ Đã lưu {len(valid)} kỳ")
+        if invalid:
+            st.error(f"❌ Sai định dạng: {', '.join(invalid)}")
 
     df = load_data()
-    st.info(f"Đã lưu {len(df)} kỳ")
+    st.info(f"📦 Tổng kỳ đã lưu: {len(df)}")
 
     if st.button("🗑️ XÓA SẠCH"):
         clear_data()
         st.warning("Đã xóa toàn bộ dữ liệu")
 
-# ---------- TAB 2 ----------
+# ================== TAB 2 ==================
 with tab2:
     df = load_data()
-    pairs, ai_break, conf = predict(df)
-
-    if pairs is None:
-        st.warning("⚠️ Chưa đủ dữ liệu (cần tối thiểu 20 kỳ)")
+    if len(df) < 10:
+        st.warning("⚠️ Cần ít nhất 10 kỳ để dự đoán")
     else:
-        st.markdown(f"🔥 **Tin cậy tổng: {conf}%**")
+        data = df["result"].tolist()
 
-        st.markdown("## 🎯 5 số dự đoán chung (ghép 2D)")
-        cols = st.columns(3)
-        for i, p in enumerate(pairs):
-            with cols[i % 3]:
-                st.markdown(
-                    f"""
-                    <div style="
-                        background:#0b1220;
-                        padding:18px;
-                        border-radius:16px;
-                        text-align:center;
-                        margin-bottom:12px;
-                        border:2px solid #1f6feb;">
-                        <div style="font-size:38px;color:#4dd2ff;">{p}</div>
-                        <div style="color:#ffd966;">Tin cậy: {random.randint(62,82)}%</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+        st.subheader("🎯 5 số dự đoán chung (ghép 2D)")
+        five_digits = merge_algorithms(data)
+        st.success(" → ".join(five_digits))
 
-        st.markdown("## 🤖 Số AI phá kỳ")
-        st.success(f"Số AI riêng: **{ai_break}**")
+        st.subheader("🤖 Số AI phá kỳ (AI riêng)")
+        ai_num = ai_break_cycle(data)
+        st.success(f"Số AI riêng: {ai_num}")
 
-# ---------- TAB 3 ----------
+        st.metric("🔥 Tin cậy tổng (ước lượng)", "≈ 55%")
+
+# ================== TAB 3 ==================
 with tab3:
     df = load_data()
-    if len(df) == 0:
-        st.info("Chưa có dữ liệu để thống kê")
+    if df.empty:
+        st.info("Chưa có dữ liệu")
     else:
-        st.metric("Tổng số kỳ", len(df))
-        nums = parse_numbers(df)
-        freq = Counter(nums)
-        top = freq.most_common(5)
+        all_digits = "".join(df["result"].tolist())
+        counter = Counter(all_digits)
 
-        st.markdown("### 🔢 Top số xuất hiện nhiều")
-        for n, c in top:
-            st.write(f"Số {n}: {c} lần")
+        st.subheader("📊 Tần suất số (dễ hiểu)")
+        freq_df = pd.DataFrame(counter.items(), columns=["Số", "Số lần"])
+        freq_df = freq_df.sort_values("Số lần", ascending=False)
 
-st.caption("⚠️ Công cụ hỗ trợ phân tích – không cam kết trúng")
+        st.dataframe(freq_df, use_container_width=True)
+
+        st.caption("⚠️ Thống kê hỗ trợ phân tích – không cam kết trúng")
