@@ -1,139 +1,128 @@
 import streamlit as st
 import re
 from collections import Counter
+import pandas as pd
 
-# --- 1. CẤU HÌNH GIAO DIỆN CHỐNG MỎI MẮT & TƯƠNG PHẢN CAO ---
-st.set_page_config(page_title="RECOVERY-LEGEND v9.0", layout="wide")
+# --- 1. CẤU HÌNH GIAO DIỆN & STYLE ---
+st.set_page_config(page_title="v5.2 ULTRA-4 FINAL", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #000000; color: #ffffff; }
-    .stTabs [data-baseweb="tab"] { color: #ffffff; font-size: 20px; font-weight: bold; }
-    .stTabs [aria-selected="true"] { color: #00FF00 !important; border-bottom: 3px solid #00FF00 !important; }
+    .main { background-color: #f8f9fa; }
+    .stTabs [data-baseweb="tab"] { font-size: 18px; font-weight: bold; color: #495057; }
+    .stTabs [aria-selected="true"] { color: #d9534f !important; border-bottom-color: #d9534f !important; }
     
-    /* Khung hiển thị dàn 10 số 2D */
-    .d2-panel {
-        background-color: #ffffff; 
-        padding: 30px; 
-        border-radius: 25px; 
-        border: 8px solid #ff0000; 
-        text-align: center; 
-        margin: 20px 0;
-        box-shadow: 0 0 30px rgba(255, 0, 0, 0.4);
+    /* Khung kết quả chính */
+    .result-card {
+        background: #ffffff; padding: 30px; border-radius: 20px;
+        border-left: 10px solid #d9534f; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center; margin: 10px 0;
     }
-    .d2-header { color: #000000; font-size: 22px; font-weight: bold; text-transform: uppercase; margin-bottom: 15px; }
-    .d2-main-num { color: #ff0000 !important; font-size: 75px !important; font-weight: 900; letter-spacing: 8px; line-height: 1; }
-    
-    /* Ô Copy số */
-    .copy-area { background: #111; border: 2px dashed #00FF00; padding: 10px; border-radius: 10px; color: #00FF00; font-family: 'Courier New', monospace; font-size: 20px; text-align: center; }
-    
-    /* Trạng thái cầu */
-    .indicator { padding: 15px; border-radius: 15px; text-align: center; font-weight: bold; font-size: 18px; margin-bottom: 20px; }
-    .safe { background: rgba(0, 255, 0, 0.2); border: 2px solid #00FF00; color: #00FF00; }
-    .warn { background: rgba(255, 255, 0, 0.2); border: 2px solid #FFFF00; color: #FFFF00; }
-    .danger { background: rgba(255, 0, 0, 0.2); border: 2px solid #FF0000; color: #FF0000; }
+    .num-highlight { color: #d9534f; font-size: 80px; font-weight: 900; letter-spacing: 15px; }
+    .report-win { color: #28a745; font-weight: bold; font-size: 20px; }
+    .report-loss { color: #dc3545; font-weight: bold; font-size: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. HỆ THỐNG PHÂN TÍCH 12 TẦNG (CORE ENGINE) ---
-def recovery_engine(raw_data):
-    # Lọc tất cả các số từ 2-5 chữ số (Xử lý cả rác văn bản từ OCR)
-    clean_nums = re.findall(r'\d{2,5}', raw_data)
-    if len(clean_nums) < 20: return None, 0
+# --- 2. HỆ THỐNG THUẬT TOÁN 6 TẦNG ---
+def core_engine_v5(data):
+    # Lọc dãy số
+    raw_nums = [int(x) for x in re.findall(r'\d', data)]
+    if len(raw_nums) < 5: return None
     
-    # Lấy 2 số cuối của 27 giải
-    results_2d = [n[-2:] for n in clean_nums]
-    freq = Counter(results_2d)
-    last_5_kỳ = results_2d[-5:] # Lấy nhịp 5 con gần nhất (thường là giải cao)
+    last_kỳ = raw_nums[-5:] # 5 số của kỳ gần nhất
+    freq = Counter(raw_nums[-30:]) # Tần suất 30 số gần đây
+    shadow_map = {0:5, 5:0, 1:6, 6:1, 2:7, 7:2, 3:8, 8:3, 4:9, 9:4}
     
-    scored_list = []
-    for i in range(100):
-        num = f"{i:02d}"
-        score = 0
-        
-        # Tầng 1: Tần suất (Poisson)
-        f_count = freq[num]
-        if f_count == 0: score += 25  # Cầu nhịp hồi
-        elif 1 <= f_count <= 2: score += 40 # Cầu đang chạy
-        else: score -= 20 # Né số đã nổ quá nhiều
-        
-        # Tầng 2: Ưu tiên nhịp bệt/giải cao
-        if num in last_5_kỳ: score += 30
-        
-        # Tầng 3: Bóng âm dương cơ bản
-        shadow = {"0":"5", "5":"0", "1":"6", "6":"1", "2":"7", "7":"2", "3":"8", "8":"3", "4":"9", "9":"4"}
-        first_digit = num[0]
-        if shadow.get(first_digit) == num[1]: score += 15
-        
-        scored_list.append({'num': num, 'points': score})
+    scored = {i: 0 for i in range(10)}
+    for i in range(10):
+        # Tầng 1: Bệt nhịp (Số vừa ra kỳ trước)
+        if i in last_kỳ: scored[i] += 35
+        # Tầng 2: Bóng đối xứng
+        if any(i == shadow_map.get(x) for x in last_kỳ): scored[i] += 30
+        # Tầng 3: Tần suất dày (Hot numbers)
+        if freq[i] >= 3: scored[i] += 20
+        # Tầng 4: Sát kép (Tiến lùi)
+        if any(i == (x+1)%10 or i == (x-1)%10 for x in last_kỳ): scored[i] += 15
+        # Tầng 5: Loại trừ số Gan (Số không ra trong 15 số gần nhất)
+        if i not in raw_nums[-15:]: scored[i] -= 25
+        # Tầng 6: Fibonacci nhịp nghỉ
+        if i not in last_kỳ and i in raw_nums[-10:-5]: scored[i] += 10
+
+    # Lấy 4 số rời rạc có điểm cao nhất
+    top_4 = sorted(scored.items(), key=lambda x: x[1], reverse=True)[:4]
+    return [x[0] for x in top_4]
+
+# --- 3. QUẢN LÝ TRẠNG THÁI ---
+if 'history' not in st.session_state:
+    st.session_state.history = []
+
+# --- 4. GIAO DIỆN CÁC TAB ---
+st.title("🎯 v5.2 ULTRA-4: CHIẾN THUẬT HỒI PHỤC")
+st.write("---")
+
+tab_soi, tab_report, tab_settings = st.tabs(["🔍 SOI CẦU ĐA TẦNG", "📊 BÁO CÁO KẾT QUẢ", "⚙️ HƯỚNG DẪN"])
+
+with tab_soi:
+    col_in, col_out = st.columns([1, 1])
     
-    # Sắp xếp chọn 10 số điểm cao nhất
-    top_10 = sorted(scored_list, key=lambda x: x['points'], reverse=True)[:10]
-    return [x['num'] for x in top_10], len(results_2d)
-
-# --- 3. GIAO DIỆN ĐIỀU KHIỂN ---
-st.markdown("<h1 style='text-align: center; color: #00FF00;'>🛡️ RECOVERY-LEGEND v9.0</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Chế độ: 10 Số (270k/Kỳ) - Hồi phục vốn an toàn</p>", unsafe_allow_html=True)
-
-tab_input, tab_result, tab_guide = st.tabs(["📥 NHẬP DỮ LIỆU", "🎯 DÀN 10 SỐ", "📜 QUY TẮC VÀO TIỀN"])
-
-with tab_input:
-    st.markdown("### 📸 Bước 1: Dán văn bản từ ảnh chụp/OCR")
-    input_data = st.text_area("Hệ thống sẽ tự bóc tách 27 giải thưởng...", height=180, placeholder="Dán nội dung tại đây (Ví dụ: 87308 41173 21487...)")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🚀 PHÂN TÍCH NGAY"):
-            if input_data:
-                final_nums, count = recovery_engine(input_data)
-                if final_nums:
-                    st.session_state.d2_final = final_nums
-                    st.session_state.data_count = count
-                    st.success(f"✅ Đã quét xong {count} giải!")
-                else:
-                    st.error("❌ Dữ liệu rác hoặc không đủ số. Hãy copy lại bảng kết quả!")
-    with col2:
-        if st.button("♻️ LÀM MỚI"):
-            st.session_state.clear()
-            st.rerun()
-
-with tab_result:
-    if 'd2_final' in st.session_state:
-        nums = st.session_state.d2_final
+    with col_in:
+        st.markdown("### 📥 Nhập kết quả")
+        input_data = st.text_area("Dán chuỗi số kỳ gần nhất (S-Pen/OCR):", height=150)
         
-        # Chỉ báo trạng thái cầu dựa trên số lượng giải đọc được
-        if st.session_state.data_count >= 27:
-            st.markdown('<div class="indicator safe">✅ CẦU THUẬN: Dữ liệu đủ 27 giải - Tỉ lệ nổ cao</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="indicator warn">⚠️ DỮ LIỆU THIẾU: Chỉ có ' + str(st.session_state.data_count) + '/27 giải - Cân nhắc mức cược</div>', unsafe_allow_html=True)
+        if st.button("🚀 KÍCH HOẠT HỆ THỐNG"):
+            res = core_engine_v5(input_data)
+            if res:
+                st.session_state.current_res = res
+                st.success("Đã tính toán xong nhịp cầu!")
+            else:
+                st.error("Dữ liệu không hợp lệ hoặc quá ngắn.")
 
-        # Hiển thị dàn 10 số
-        st.markdown(f"""
-            <div class="d2-panel">
-                <div class="d2-header">Dàn 10 Số 2D - Bao Lô</div>
-                <div class="d2-main-num">{" . ".join(nums)}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    with col_out:
+        if 'current_res' in st.session_state:
+            nums = st.session_state.current_res
+            st.markdown(f"""
+                <div class="result-card">
+                    <p style="color:#666; font-weight:bold;">4 SỐ RỜI (VỐN 40K)</p>
+                    <div class="num-highlight">{".".join(map(str, nums))}</div>
+                    <p style="margin-top:10px; color:#d9534f;">🎯 Mục tiêu: Trúng 1 nháy lãi 58k</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Form báo cáo nhanh
+            st.write("---")
+            st.markdown("##### 📝 Xác nhận kết quả kỳ này:")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ TRÚNG (WIN)"):
+                    st.session_state.history.append({"Số": nums, "KQ": "WIN", "Tiền": "+58k"})
+                    st.toast("Chúc mừng! Đã lưu kết quả.")
+            with c2:
+                if st.button("❌ TRƯỢT (LOSS)"):
+                    st.session_state.history.append({"Số": nums, "KQ": "LOSS", "Tiền": "-40k"})
+                    st.toast("Không sao, giữ bình tĩnh chờ nhịp sau.")
+
+with tab_report:
+    st.markdown("### 📈 Nhật ký chiến đấu")
+    if st.session_state.history:
+        df = pd.DataFrame(st.session_state.history)
+        st.table(df)
         
-        # Ô Copy nhanh
-        st.markdown("##### 📋 Sao chép dàn số:")
-        copy_text = ",".join(nums)
-        st.code(copy_text, language="")
-        st.caption("Nhấp đúp hoặc nhấn giữ dòng trên để Sao chép và Dán vào Kubet.")
-        
+        # Tính toán tổng kết
+        wins = len([x for x in st.session_state.history if x['KQ'] == 'WIN'])
+        losses = len([x for x in st.session_state.history if x['KQ'] == 'LOSS'])
+        st.sidebar.markdown(f"### 📊 Tổng kết:")
+        st.sidebar.success(f"Thắng: {wins}")
+        st.sidebar.error(f"Thua: {losses}")
     else:
-        st.info("Đang chờ dữ liệu từ Tab NHẬP DỮ LIỆU...")
+        st.info("Chưa có dữ liệu báo cáo.")
 
-with tab_guide:
+with tab_settings:
     st.markdown("""
-    ### 💰 Quản lý vốn thông minh (Vốn gợi ý: 270k/kỳ)
-    * **Mục tiêu:** Trúng ít nhất 3 nháy để có lãi.
-    * **Cách đánh:** Nhập dàn 10 số vào mục 'Nhập số' -> Bao lô -> Điền mức tiền (Ví dụ: 1).
-    
-    ### 🛡️ Nguyên tắc bảo trì vốn:
-    1. **Thắng liên tiếp 2 kỳ:** Rút lãi hoặc giữ nguyên mức tiền.
-    2. **Thua 1 kỳ:** Không gấp đôi ngay, giữ bình tĩnh đánh kỳ tiếp theo.
-    3. **Thua 2 kỳ liên tiếp:** Dừng ngay lập tức. Nghỉ ít nhất 15 phút (5 kỳ) để sảnh thoát khỏi nhịp quét.
-    4. **Dữ liệu:** Càng dán nhiều kỳ cũ (lịch sử), AI càng bắt nhịp chuẩn.
+    ### 🛡️ Nguyên tắc vàng bản v5.2:
+    1. **Vốn:** Luôn đi đều tay 40k (10k mỗi số). Tuyệt đối không gấp thếp khi đang thua.
+    2. **Dữ liệu:** Dán kết quả của ít nhất 3 kỳ gần nhất để thuật toán bắt nhịp bệt chính xác.
+    3. **Dừng chơi:** - Nghỉ 10 phút nếu thắng liên tiếp 3 kỳ.
+        - Dừng ngay nếu thua 2 kỳ liên tiếp (Cầu đang loạn).
+    4. **Chính xác:** Ưu tiên dán số qua OCR để tránh nhập sai số làm hỏng thuật toán.
     """)
-    st.warning("Lưu ý: Luôn kiểm tra lại dàn số trước khi bấm 'Xác nhận cược'.")
