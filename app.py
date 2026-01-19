@@ -1,118 +1,164 @@
 import streamlit as st
 import re
-import pandas as pd
-import io
+from collections import Counter
+import itertools
+import random
+import math
 
-# --- 1. TỐI ƯU HỆ THỐNG (CHỐNG TRÀN RAM / CHỐNG NHIỄU) ---
-st.set_page_config(page_title="v6.0 PRO AI", layout="wide")
+# ================== CẤU HÌNH ==================
+st.set_page_config(
+    page_title="LOTOBET 2 SỐ 5 TINH v6.0",
+    layout="centered"
+)
 
-# Chống tràn RAM: Giới hạn lưu trữ cache
-if 'data_pool' not in st.session_state: st.session_state.data_pool = ""
-if 'history_log' not in st.session_state: st.session_state.history_log = []
+# ================== SESSION ==================
+if "data_5so" not in st.session_state:
+    st.session_state.data_5so = []
 
-st.markdown("""
-    <style>
-    /* Tab dọc Sidebar nhưng Tab chính ngang để tối ưu diện tích Android */
-    .stApp { background-color: #ffffff; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        padding: 10px 15px; background: #f0f2f6; border-radius: 8px; font-weight: bold;
-    }
-    .stTabs [aria-selected="true"] { background: #d9534f !important; color: white !important; }
-    
-    /* Ô số hình vuông dự đoán (Gọn, chuyên nghiệp) */
-    .grid-container {
-        display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    }
-    .square-card {
-        border: 2px solid #d9534f; border-radius: 12px; padding: 10px;
-        text-align: center; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    .sq-num { color: #d9534f; font-size: 32px; font-weight: 800; line-height: 1; }
-    .sq-pct { color: #28a745; font-size: 14px; font-weight: bold; }
-    </style>
-""", unsafe_allow_html=True)
+# ================== HÀM CORE ==================
+def extract_5_digits(raw_text):
+    """
+    Lọc toàn bộ chữ số bằng Regex
+    Gom thành từng kỳ 5 số
+    """
+    digits = re.findall(r"\d", raw_text)
+    chunks = []
+    for i in range(0, len(digits) - 4, 5):
+        chunk = digits[i:i+5]
+        if len(chunk) == 5:
+            chunks.append(chunk)
+    return chunks
 
-# --- 2. THUẬT TOÁN ĐA CHIỀU (50 THUẬT TOÁN GIẢ LẬP) ---
-def ai_prediction_logic(data):
-    # CHỐNG NHIỄU: Chỉ lọc lấy số, bỏ ký tự lạ
-    numbers = re.findall(r'\d{2,5}', str(data))
-    last_2d = [n[-2:] for n in numbers]
-    if len(last_2d) < 10: return None
 
-    # Giả lập 50 thuật toán (Bệt, Gan, Bóng, Tần suất, Nhịp rơi...)
-    scored = {}
-    for i in range(100):
-        p = f"{i:02d}"
-        score = 0
-        # Nhịp lặp kỳ trước (Quan trọng nhất LotoBet)
-        if p in last_2d[-5:]: score += 50 
-        # Tần suất xuất hiện
-        score += last_2d.count(p) * 10
-        # Thuật toán lặp kỳ sau (dự đoán nhịp rơi)
-        if any(p == last_2d[j] for j in range(len(last_2d)-1) if last_2d[j+1] == p): score += 20
-        
-        conf = min(88 + (score/8), 99.1)
-        scored[p] = round(conf, 1)
+def calc_frequency(data):
+    flat = list(itertools.chain.from_iterable(data))
+    return Counter(flat)
 
-    return sorted(scored.items(), key=lambda x: x[1], reverse=True)[:6]
 
-# --- 3. TAB NGANG TỐI ƯU (THEO YÊU CẦU) ---
-t1, t2, t3, t4 = st.tabs(["📥 THU THẬP", "🎯 PHÂN TÍCH", "📊 THỐNG KÊ", "📤 XUẤT FILE"])
+def calc_recent_bias(data, n=30):
+    recent = data[-n:] if len(data) >= n else data
+    flat = list(itertools.chain.from_iterable(recent))
+    return Counter(flat)
 
-with t1:
-    st.markdown("### 📡 Thu thập dữ liệu đa nguồn")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.data_pool = st.text_area("Dán OCR/Website:", value=st.session_state.data_pool, height=150)
-    with c2:
-        up_file = st.file_uploader("Nhập từ TXT/CSV", type=['txt', 'csv'])
-        if up_file:
-            st.session_state.data_pool = up_file.read().decode("utf-8")
-            st.success("Đã Import file thành công!")
 
-with t2:
-    st.markdown("### 🧠 Dự đoán 6 cặp 2D (Không cố định)")
-    if st.button("🚀 KÍCH HOẠT AI", use_container_width=True):
-        preds = ai_prediction_logic(st.session_state.data_pool)
-        if preds:
-            st.session_state.current_preds = preds
-        else:
-            st.warning("Dữ liệu thiếu hoặc bị nhiễu!")
+def score_pair(pair, freq_all, freq_recent):
+    """
+    Tính trọng số cặp 2D dựa trên:
+    - Tần suất tổng
+    - Nhịp gần (bệt)
+    - Ngẫu nhiên nhẹ để phân hóa %
+    """
+    a, b = pair
+    base = freq_all[a] + freq_all[b]
+    recent = freq_recent[a] + freq_recent[b]
+    noise = random.uniform(0.9, 1.1)
+    score = (base * 0.6 + recent * 0.4) * noise
+    return score
 
-    if 'current_preds' in st.session_state:
-        st.markdown('<div class="grid-container">', unsafe_allow_html=True)
-        cols = st.columns(3) # Dòng 1
-        cols2 = st.columns(3) # Dòng 2
-        all_cols = cols + cols2
-        for idx, (pair, pct) in enumerate(st.session_state.current_preds):
-            with all_cols[idx]:
-                st.markdown(f"""<div class="square-card">
-                    <div class="sq-pct">{pct}%</div>
-                    <div class="sq-num">{pair}</div>
-                </div>""", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.write("---")
-        b1, b2 = st.columns(2)
-        if b1.button("✅ THẮNG", use_container_width=True):
-            st.session_state.history_log.append({"KQ": "WIN", "Dàn": [x[0] for x in st.session_state.current_preds]})
-            st.balloons()
-        if b2.button("❌ THUA", use_container_width=True):
-            st.session_state.history_log.append({"KQ": "LOSS", "Dàn": [x[0] for x in st.session_state.current_preds]})
+def predict_pairs(data):
+    freq_all = calc_frequency(data)
+    freq_recent = calc_recent_bias(data)
 
-with t3:
-    st.markdown("### 📊 Thống kê lặp kỳ")
-    if st.session_state.history_log:
-        df = pd.DataFrame(st.session_state.history_log)
-        st.table(df.tail(10))
-        win_rate = len(df[df['KQ'] == 'WIN']) / len(df) * 100
-        st.metric("TỶ LỆ CHÍNH XÁC AI", f"{win_rate:.1f}%")
+    digits = list(freq_all.keys())
+    all_pairs = list(itertools.combinations(digits, 2))
+
+    scored = []
+    for p in all_pairs:
+        s = score_pair(p, freq_all, freq_recent)
+        scored.append((p, s))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top6 = scored[:6]
+
+    max_score = top6[0][1]
+    results = []
+    for p, s in top6:
+        percent = int((s / max_score) * 100)
+        results.append({
+            "pair": f"{p[0]}{p[1]}",
+            "percent": percent
+        })
+    return results
+
+
+# ================== UI ==================
+st.title("🎯 LOTOBET 2 SỐ 5 TINH v6.0")
+st.caption("Phân tích đủ 5 số – Không bỏ nhịp – Chuẩn sảnh A")
+
+tab1, tab2, tab3 = st.tabs([
+    "📂 Quản lý dữ liệu",
+    "🤖 Dự đoán AI",
+    "📊 Thống kê"
+])
+
+# ================== TAB 1 ==================
+with tab1:
+    st.subheader("📥 Nhập dữ liệu mở thưởng")
+    raw = st.text_area(
+        "Dán kết quả (OCR / Web / File)",
+        height=150,
+        placeholder="Ví dụ: 15406 98231 44019 ..."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("💾 LƯU DỮ LIỆU"):
+            chunks = extract_5_digits(raw)
+            if chunks:
+                st.session_state.data_5so.extend(chunks)
+                st.success(f"Đã lưu {len(chunks)} kỳ (5 số/kỳ)")
+            else:
+                st.warning("Không phát hiện đủ cụm 5 số")
+
+    with col2:
+        if st.button("🗑️ XÓA SẠCH RAM"):
+            st.session_state.data_5so = []
+            st.success("Đã xóa toàn bộ dữ liệu")
+
+    st.info(f"Tổng số kỳ đã lưu: {len(st.session_state.data_5so)}")
+
+# ================== TAB 2 ==================
+with tab2:
+    st.subheader("🔥 6 CẶP 2 SỐ DỰ ĐOÁN CAO NHẤT")
+
+    if len(st.session_state.data_5so) < 10:
+        st.warning("Cần tối thiểu 10 kỳ để AI bắt nhịp")
     else:
-        st.info("Chưa có dữ liệu.")
+        results = predict_pairs(st.session_state.data_5so)
 
-with t4:
-    st.markdown("### 📤 Export/Báo cáo")
-    if st.session_state.history_log:
-        csv = pd.DataFrame(st.session_state.history_log).to_csv(index=False).encode('utf-8')
-        st.download_button("Tải lịch sử (CSV)", data=csv, file_name="history_v6.csv")
+        grid = st.columns(3)
+        for i, res in enumerate(results):
+            with grid[i % 3]:
+                st.markdown(
+                    f"""
+                    <div style="
+                        border:2px solid #00ffcc;
+                        border-radius:12px;
+                        padding:14px;
+                        text-align:center;
+                        margin-bottom:10px;
+                        background-color:#0e1117;
+                    ">
+                        <div style="font-size:38px;font-weight:bold;color:#00ffcc;">
+                            {res['pair']}
+                        </div>
+                        <div style="font-size:16px;color:#cccccc;">
+                            Tin cậy: {res['percent']}%
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+# ================== TAB 3 ==================
+with tab3:
+    st.subheader("📊 Thống kê tần suất 5 số")
+
+    if st.session_state.data_5so:
+        freq = calc_frequency(st.session_state.data_5so)
+        for d in sorted(freq.keys()):
+            st.write(f"Số {d}: {freq[d]} lần")
+    else:
+        st.info("Chưa có dữ liệu")
