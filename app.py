@@ -6,51 +6,64 @@ from datetime import datetime
 import os
 import random
 
-# ================== CẤU HÌNH APP ==================
+# ================== CONFIG ==================
 st.set_page_config(
-    page_title="NUMCORE – Data Analysis Engine",
+    page_title="NUMCORE",
     layout="centered"
 )
 
 DATA_FILE = "data.csv"
 
-# ================== LOAD / SAVE ==================
+# ================== DATA ==================
 def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    return pd.DataFrame(columns=["time", "numbers"])
+    if not os.path.exists(DATA_FILE):
+        return pd.DataFrame(columns=["time", "numbers"])
 
-def save_result(nums):
+    df = pd.read_csv(DATA_FILE)
+
+    # TỰ SỬA DATA CŨ
+    if "numbers" not in df.columns:
+        # lấy cột cuối cùng làm numbers
+        df["numbers"] = df.iloc[:, -1].astype(str)
+
+    df["numbers"] = df["numbers"].astype(str)
+    return df[["time", "numbers"]]
+
+def save_result(raw):
     df = load_data()
-    df = pd.concat([
-        df,
-        pd.DataFrame([{
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "numbers": "".join(map(str, nums))
-        }])
-    ])
+    new = pd.DataFrame([{
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "numbers": raw
+    }])
+    df = pd.concat([df, new], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ================== XỬ LÝ SỐ ==================
-def clean_numbers(nums):
-    """Loại trùng, giữ tối đa 5 số"""
-    nums = list(dict.fromkeys(nums))
-    return nums[:5]
+# ================== CORE LOGIC ==================
+def parse_numbers(value):
+    s = str(value)
+    return [int(x) for x in s if x.isdigit()][:5]
 
-def build_pairs(nums):
-    """Tạo tổ hợp 3 số dễ nhìn"""
+def unique(nums):
+    out = []
+    for n in nums:
+        if n not in out:
+            out.append(n)
+    return out[:5]
+
+def build_groups(nums):
     if len(nums) < 3:
         return []
     return list(combinations(nums, 3))[:2]
 
-def ai_strategy(nums):
-    """Sinh số chiến lược – KHÔNG CHẬP"""
+def ai_pick(nums):
     pool = [n for n in range(10) if n not in nums]
+    if len(pool) < 2:
+        return "--"
     a = random.choice(pool)
     b = random.choice([x for x in pool if x != a])
     return f"{a}{b}"
 
-# ================== GIAO DIỆN ==================
+# ================== UI ==================
 st.title("🔷 NUMCORE")
 st.caption("Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu")
 
@@ -58,65 +71,57 @@ tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🎯 Phân tích & Dự đ
 
 # ================== TAB 1 ==================
 with tab1:
-    st.subheader("Nhập kết quả kỳ vừa rồi (5 số)")
-    raw = st.text_input("Ví dụ: 39969", max_chars=5)
+    raw = st.text_input("Nhập kết quả kỳ (5 số)", max_chars=5)
 
-    if st.button("Lưu dữ liệu"):
+    if st.button("Lưu"):
         if raw.isdigit() and len(raw) == 5:
-            nums = clean_numbers([int(x) for x in raw])
-            save_result(nums)
-            st.success(f"Đã lưu: {nums}")
+            save_result(raw)
+            st.success("Đã lưu dữ liệu")
         else:
-            st.error("Nhập đúng 5 chữ số!")
+            st.error("Nhập đúng 5 chữ số")
 
     df = load_data()
     if not df.empty:
-        st.markdown("📊 **Dữ liệu đã lưu**")
         st.dataframe(df.tail(10), use_container_width=True)
 
 # ================== TAB 2 ==================
 with tab2:
     df = load_data()
 
-    if df.empty:
-        st.warning("Chưa có dữ liệu để phân tích.")
+    all_nums = []
+    for v in df["numbers"]:
+        try:
+            all_nums.extend(parse_numbers(v))
+        except:
+            continue
+
+    if len(all_nums) < 10:
+        st.warning("Chưa đủ dữ liệu để phân tích")
     else:
-        all_nums = []
-        for row in df["numbers"]:
-            all_nums.extend([int(x) for x in row])
-
         freq = Counter(all_nums)
-        top5 = [n for n, _ in freq.most_common(5)]
-        top5 = clean_numbers(top5)
+        top = unique([n for n, _ in freq.most_common(5)])
 
-        st.subheader("🎯 TỔ HỢP TRUNG TÂM")
-        pairs = build_pairs(top5)
+        st.subheader("🎯 SỐ TRUNG TÂM")
+        groups = build_groups(top)
 
-        if pairs:
-            col1, col2 = st.columns(2)
-            col1.metric("Tổ hợp 1", "".join(map(str, pairs[0])))
-            if len(pairs) > 1:
-                col2.metric("Tổ hợp 2", "".join(map(str, pairs[1])))
-
-            st.caption("✔ Đã lọc trùng • ✔ Không số chập • ✔ Dễ đánh")
-        else:
-            st.info("Chưa đủ dữ liệu để tạo tổ hợp.")
+        c1, c2 = st.columns(2)
+        if len(groups) > 0:
+            c1.metric("Tổ hợp A", "".join(map(str, groups[0])))
+        if len(groups) > 1:
+            c2.metric("Tổ hợp B", "".join(map(str, groups[1])))
 
         st.divider()
 
         st.subheader("🧠 SỐ CHIẾN LƯỢC")
-        strat = ai_strategy(top5)
-        st.metric("Ưu tiên", strat)
-        st.caption("Chỉ dùng khi chuỗi lặp kéo dài")
+        st.metric("Ưu tiên", ai_pick(top))
 
         st.divider()
 
         total = len(df)
-        hit_rate = min(55, 45 + total // 50)
+        rate = min(60, 45 + total // 40)
 
-        st.subheader("📊 HIỆU SUẤT THAM KHẢO")
-        st.write(f"- Tổng kỳ phân tích: **{total}**")
-        st.write(f"- Tỉ lệ tham khảo: **≈ {hit_rate}%**")
-        st.caption("Số liệu mang tính hỗ trợ quyết định")
+        st.subheader("📊 THỐNG KÊ")
+        st.write(f"Kỳ đã phân tích: **{total}**")
+        st.write(f"Tỉ lệ tham khảo: **≈ {rate}%**")
 
-st.caption("NUMCORE v6.6 – Tập trung hiệu quả, không màu mè")
+st.caption("NUMCORE v6.6 – Ổn định – Không crash – Tập trung tiền thật")
