@@ -3,141 +3,133 @@ import re
 from collections import Counter
 import pandas as pd
 
-# --- 1. CẤU HÌNH GIAO DIỆN CHUYÊN NGHIỆP (TAB NGANG & TỐI ƯU DIỆN TÍCH) ---
-st.set_page_config(page_title="v6.0 PREDICTOR-ULTIMATE", layout="wide")
+# --- 1. CẤU HÌNH GIAO DIỆN COMPACT (NHỎ GỌN & CHUYÊN NGHIỆP) ---
+st.set_page_config(page_title="v6.0 Compact Pro", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .stApp { background: white; }
+    /* Tổng thể nền trắng sạch sẽ */
+    .stApp { background: #ffffff; }
     
-    /* Thiết kế thẻ 2D chuyên nghiệp */
-    .card-2d {
-        background: #ffffff; border: 2px solid #d9534f; border-radius: 15px;
-        padding: 15px; text-align: center; margin: 5px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        flex: 1; min-width: 140px;
-    }
-    .num-2d { color: #d9534f; font-size: 45px; font-weight: 900; margin: 0; }
-    .percent-2d { color: #28a745; font-size: 18px; font-weight: bold; }
-    .label-2d { color: #888; font-size: 11px; text-transform: uppercase; }
-    
-    /* Tối ưu Tab ngang */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    /* Thu nhỏ Tab ngang */
+    .stTabs [data-baseweb="tab-list"] { gap: 5px; }
     .stTabs [data-baseweb="tab"] {
-        background-color: #f1f1f1; border-radius: 10px 10px 0 0;
-        padding: 10px 20px; font-weight: bold;
+        padding: 8px 15px; font-size: 14px; border-radius: 8px 8px 0 0;
+        background-color: #f8f9fa; color: #666;
     }
-    .stTabs [aria-selected="true"] { background-color: #d9534f !important; color: white !important; }
-    
-    /* Bảng thống kê */
-    .stat-box {
-        padding: 10px; border-radius: 8px; border: 1px solid #ddd;
-        text-align: center; margin-bottom: 10px;
+    .stTabs [aria-selected="true"] { 
+        background-color: #d9534f !important; color: white !important; 
+    }
+
+    /* Thẻ 2D thiết kế lại nhỏ gọn */
+    .compact-card {
+        background: white; border: 1px solid #eee; border-radius: 12px;
+        padding: 10px; text-align: center; margin: 5px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        border-top: 4px solid #d9534f;
+    }
+    .compact-num { color: #d9534f; font-size: 32px; font-weight: 800; line-height: 1; }
+    .compact-pct { color: #28a745; font-size: 14px; font-weight: bold; margin-bottom: 5px; }
+    .compact-label { color: #999; font-size: 10px; text-transform: uppercase; }
+
+    /* Nút bấm tinh gọn */
+    .stButton>button {
+        border-radius: 8px; font-size: 14px; padding: 5px 0; height: auto;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. HỆ THỐNG ĐA THUẬT TOÁN (NHỊP BỆT, BÓNG, TẦN SUẤT, LẶP KỲ) ---
-def advanced_engine_v6(data):
-    # Trích xuất 2 số cuối (2D)
+# --- 2. THUẬT TOÁN ĐA TẦNG (NHỊP BỆT & LẶP KỲ) ---
+def engine_v6_compact(data):
+    # Lấy các cặp số 2D
     raw_2d = re.findall(r'\d{2,5}', data)
     last_2d_list = [n[-2:] for n in raw_2d]
     
-    if len(last_2d_list) < 15: return None
+    if len(last_2d_list) < 10: return None
     
     freq = Counter(last_2d_list)
-    last_kỳ = last_2d_list[-5:] # 5 con kỳ vừa ra
-    prev_kỳ = last_2d_list[-10:-5] # 5 con kỳ trước đó nữa
+    last_5 = last_2d_list[-5:] # Nhịp kỳ vừa mở
     
     all_pairs = [f"{i:02d}" for i in range(100)]
     scored = []
     
     for p in all_pairs:
         score = 0
-        # 1. Thuật toán Lặp kỳ (Bệt kỳ trước)
-        if p in last_kỳ: score += 50
-        # 2. Thuật toán Nhịp rơi (Bệt cách kỳ)
-        if p in prev_kỳ: score += 30
-        # 3. Thuật toán Bóng số (0-5, 1-6, 2-7, 3-8, 4-9)
-        shadow_p = "".join([{"0":"5","5":"0","1":"6","6":"1","2":"7","7":"2","3":"8","8":"3","4":"9","9":"4"}.get(c, c) for c in p])
-        if shadow_p in last_kỳ: score += 25
-        # 4. Thuật toán Tần suất (Hot)
-        score += freq[p] * 15
+        # T1: Nhịp Bệt (Lặp kỳ trước)
+        if p in last_5: score += 55
+        # T2: Tần suất xuất hiện
+        score += freq[p] * 12
+        # T3: Bóng số lặp
+        shadow = "".join([{"0":"5","5":"0","1":"6","6":"1","2":"7","7":"2","3":"8","8":"3","4":"9","9":"4"}.get(c,c) for c in p])
+        if shadow in last_5: score += 20
         
-        # Tính độ tin cậy %
-        confidence = min(80 + (score / 6), 99.2)
-        scored.append({'num': p, 'conf': round(confidence, 1)})
+        # Độ tin cậy
+        conf = min(82 + (score / 6.5), 98.9)
+        scored.append({'num': p, 'conf': round(conf, 1)})
     
-    # Trả về 5 cặp số mạnh nhất
     return sorted(scored, key=lambda x: x['conf'], reverse=True)[:5]
 
-# --- 3. QUẢN LÝ DỮ LIỆU ---
+# --- 3. QUẢN LÝ DỮ LIỆU PHIÊN CHƠI ---
 if 'history_v6' not in st.session_state: st.session_state.history_v6 = []
 
 # --- 4. GIAO DIỆN CHÍNH ---
-st.markdown("<h2 style='text-align: center; color: #d9534f;'>💎 PREDICTOR v6.0 ULTIMATE</h2>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center; color: #d9534f; margin-bottom: 0;'>💎 PREDICTOR v6.0 COMPACT</h4>", unsafe_allow_html=True)
 
-# Tabs ngang tối ưu diện tích
-tab_soi, tab_thong_ke, tab_huong_dan = st.tabs(["🎯 SOI CẦU 5 CẶP", "📊 THỐNG KÊ CHI TIẾT", "📜 CHIẾN THUẬT"])
+tab_soi, tab_stat, tab_info = st.tabs(["🎯 SOI CẦU", "📊 THỐNG KÊ", "📜 HD"])
 
 with tab_soi:
-    col_input, col_output = st.columns([1, 1.8])
+    # Chia cột tỉ lệ 1:2 để tiết kiệm diện tích
+    c_in, c_out = st.columns([1, 2.2])
     
-    with col_input:
-        st.markdown("##### 📥 Dữ liệu kỳ trước")
-        input_data = st.text_area("Dán chuỗi số OCR:", height=180, placeholder="Dán dãy số tại đây...")
-        if st.button("🚀 PHÂN TÍCH ĐA THUẬT TOÁN", use_container_width=True):
-            res = advanced_engine_v6(input_data)
+    with c_in:
+        raw_txt = st.text_area("Dán OCR:", height=120, placeholder="Kết quả kỳ trước...")
+        if st.button("🚀 PHÂN TÍCH", use_container_width=True):
+            res = engine_v6_compact(raw_txt)
             if res:
                 st.session_state.current_5 = res
-                st.success("✅ Đã tối ưu dự đoán!")
             else:
-                st.error("Cần tối thiểu 15 cặp số để phân tích nhịp.")
+                st.error("Thiếu dữ liệu!")
 
-    with col_output:
+    with c_out:
         if 'current_5' in st.session_state:
-            st.markdown("##### 🔮 5 Cặp Số Rời Tin Cậy (Vốn 50k)")
-            cols = st.columns(5)
-            for idx, item in enumerate(st.session_state.current_4 if 'current_4' in st.session_state else st.session_state.current_5):
-                with cols[idx]:
+            # Hiển thị 5 cặp số theo dạng lưới nhỏ gọn
+            rows = st.columns(5)
+            for idx, item in enumerate(st.session_state.current_5):
+                with rows[idx]:
                     st.markdown(f"""
-                        <div class="card-2d">
-                            <div class="label-2d">Tỉ lệ về</div>
-                            <div class="percent-2d">{item['conf']}%</div>
-                            <div class="num-2d">{item['num']}</div>
+                        <div class="compact-card">
+                            <div class="compact-pct">{item['conf']}%</div>
+                            <div class="compact-num">{item['num']}</div>
+                            <div class="compact-label">Tỉ lệ về</div>
                         </div>
                     """, unsafe_allow_html=True)
             
-            st.write("---")
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("✅ BÁO THẮNG (WIN)", use_container_width=True):
+            # Nút báo cáo nhanh dưới dãy số
+            st.write("")
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("✅ WIN", use_container_width=True):
                     st.session_state.history_v6.append({"KQ": "WIN", "Số": [x['num'] for x in st.session_state.current_5]})
-                    st.balloons()
-            with c2:
-                if st.button("❌ BÁO THUA (LOSS)", use_container_width=True):
+                    st.toast("Ghi nhận THẮNG!")
+            with b2:
+                if st.button("❌ LOSS", use_container_width=True):
                     st.session_state.history_v6.append({"KQ": "LOSS", "Số": [x['num'] for x in st.session_state.current_5]})
+                    st.toast("Ghi nhận THUA!")
 
-with tab_thong_ke:
+with tab_stat:
     if st.session_state.history_v6:
         df = pd.DataFrame(st.session_state.history_v6)
-        
-        # Thống kê nhịp
         wins = len(df[df['KQ'] == 'WIN'])
         total = len(df)
-        st.metric("Tỉ lệ thắng thực tế (Lần cược)", f"{(wins/total)*100:.1f}%")
         
-        st.markdown("##### 📋 Nhật ký lặp kỳ")
-        st.table(df.tail(10)) # Hiển thị 10 kỳ gần nhất
+        col_m1, col_m2 = st.columns(2)
+        col_m1.metric("Tổng Kỳ", total)
+        col_m2.metric("Tỉ lệ Win", f"{(wins/total)*100:.1f}%")
+        
+        st.markdown("**10 Kỳ Gần Nhất:**")
+        st.table(df.tail(10))
     else:
-        st.info("Chưa có dữ liệu thống kê. Hãy bắt đầu soi cầu!")
+        st.info("Chưa có lịch sử.")
 
-with tab_huong_dan:
-    st.markdown("""
-    ### 🛡️ Chiến thuật 5 Cặp Rời (Vốn 50k)
-    1. **Cách chơi:** Đặt 5 cặp số rời rạc vào mục '2 số 5 tinh'. 
-    2. **Vào tiền:** Mỗi cặp 10k. Tổng 50k/kỳ. 
-    3. **Ưu điểm:** Độ phủ cực rộng, giảm thiểu tối đa rủi ro nhà cái lách số.
-    4. **Thống kê:** Quan sát Tab Thống kê để thấy 'Số lặp kỳ' - Nếu số lặp kỳ ra liên tục, hãy tăng điểm cho các cặp % cao.
-    """)
+with tab_info:
+    st.caption("Chiến thuật: 5 cặp rời (50k) - Chế độ 2 số 5 tinh. Ưu tiên số có % trên 95%.")
