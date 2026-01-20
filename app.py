@@ -10,7 +10,7 @@ st.set_page_config(
     layout="centered"
 )
 
-DATA_FILE = "data_2tinh.csv"
+DATA_FILE = "data.csv"
 
 # ================== DATA ==================
 def load_data():
@@ -23,51 +23,29 @@ def save_number(num):
     df.loc[len(df)] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), num]
     df.to_csv(DATA_FILE, index=False)
 
-# ================== CORE AI ==================
-def extract_2tinh(df):
-    all_nums = []
+# ================== AI CORE ==================
+def split_digits(df):
+    all_digits = []
     for n in df["numbers"]:
-        if len(str(n)) == 5:
-            all_nums.append(str(n)[-2:])
-    return all_nums
+        all_digits.extend(list(str(n)))
+    return all_digits
 
-def ai_analyze(df):
-    nums = extract_2tinh(df)
+def ai_core(df):
+    digits = split_digits(df)
+    freq = Counter(digits)
 
-    if len(nums) < 20:
-        return None, None, None
+    # Lấy 6 số mạnh nhất
+    top = freq.most_common(6)
+    nums = [int(n[0]) for n in top]
 
-    # ---- Thuật toán 1: Tần suất ----
-    freq = Counter(nums)
+    # Trung tâm A – B (2 cụm 2 số)
+    center_a = f"{nums[0]}{nums[1]}"
+    center_b = f"{nums[2]}{nums[3]}"
 
-    # ---- Thuật toán 2: Gần đây (momentum) ----
-    recent = nums[-20:]
-    recent_freq = Counter(recent)
+    # AI chiến lược: 2 số mạnh + ổn định
+    strategy = sorted([nums[0], nums[2]])
 
-    # ---- Thuật toán 3: Gan ----
-    last_seen = {}
-    for i, n in enumerate(nums):
-        last_seen[n] = i
-    gan_score = {n: len(nums) - idx for n, idx in last_seen.items()}
-
-    # ---- Chấm điểm tổng ----
-    score = {}
-    for n in freq:
-        score[n] = (
-            freq[n] * 1.0 +
-            recent_freq.get(n, 0) * 1.5 +
-            gan_score.get(n, 0) * 0.5
-        )
-
-    top = sorted(score.items(), key=lambda x: x[1], reverse=True)
-
-    trung_tam_A = top[0][0]
-    trung_tam_B = top[1][0]
-
-    # ---- AI chốt 1 số đánh ----
-    chien_luoc = top[0][0]
-
-    return trung_tam_A, trung_tam_B, chien_luoc
+    return center_a, center_b, strategy, freq
 
 # ================== UI ==================
 st.title("🎯 NUMCORE AI – 2 TINH")
@@ -75,40 +53,49 @@ st.caption("Ưu tiên hiệu quả – Không nhiễu – Đánh được")
 
 tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
 
-# ---------- TAB 1 ----------
+# ================== TAB 1 ==================
 with tab1:
     st.subheader("Nhập kết quả (5 số)")
-    num = st.text_input("Ví dụ: 30945", max_chars=5)
+
+    if "input_num" not in st.session_state:
+        st.session_state.input_num = ""
+
+    num = st.text_input(
+        "Ví dụ: 30945",
+        max_chars=5,
+        key="input_num"
+    )
 
     if st.button("Lưu"):
         if num.isdigit() and len(num) == 5:
             save_number(num)
-            st.success("Đã lưu dữ liệu")
+            st.session_state.input_num = ""
+            st.success("Đã lưu 1 kỳ mới ✅")
+            st.rerun()
         else:
-            st.error("Sai định dạng")
+            st.error("Sai định dạng – cần đúng 5 số")
 
     df = load_data()
     st.subheader("Dữ liệu gần nhất")
     st.dataframe(df.tail(20), use_container_width=True)
 
-# ---------- TAB 2 ----------
+# ================== TAB 2 ==================
 with tab2:
     df = load_data()
 
     if len(df) < 20:
-        st.warning("Cần tối thiểu 20 kỳ để AI phân tích chuẩn")
+        st.warning("Cần ít nhất 20 kỳ để AI phân tích chính xác")
     else:
-        A, B, CL = ai_analyze(df)
+        center_a, center_b, strategy, freq = ai_core(df)
 
         st.subheader("🎯 SỐ TRUNG TÂM (AI)")
         col1, col2 = st.columns(2)
-        col1.metric("Tổ hợp A", A)
-        col2.metric("Tổ hợp B", B)
+        col1.metric("Tổ hợp A", center_a)
+        col2.metric("Tổ hợp B", center_b)
 
         st.subheader("🧠 SỐ CHIẾN LƯỢC (ĐÁNH)")
-        st.success(f"{CL}")
+        st.success(f"{strategy[0]}  –  {strategy[1]}")
 
         st.subheader("📊 Thống kê nhanh")
-        two_digits = extract_2tinh(df)
-        tk = Counter(two_digits).most_common(10)
-        st.table(pd.DataFrame(tk, columns=["Số", "Số lần xuất hiện"]))
+        stat_df = pd.DataFrame(freq.most_common(), columns=["Số", "Tần suất"])
+        st.dataframe(stat_df, use_container_width=True)
