@@ -189,7 +189,7 @@ def load_data():
         return pd.DataFrame(columns=["time", "numbers", "source"])
 
 def save_data(values, source="manual"):
-    """Save multiple entries with source tracking"""
+    """Save multiple entries with source tracking - FIXED VERSION"""
     df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -207,10 +207,13 @@ def save_data(values, source="manual"):
         new_df = pd.DataFrame(rows)
         df = pd.concat([df, new_df], ignore_index=True)
         
-        # Remove duplicates (same numbers in last 24 hours)
+        # FIXED: Remove any potential duplicates in the numbers column
+        # Keep the first occurrence of each unique number
+        df = df.drop_duplicates(subset=['numbers'], keep='first')
+        
+        # Sort by time (most recent last)
         df['time'] = pd.to_datetime(df['time'])
-        df = df.sort_values('time', ascending=False)
-        df = df.drop_duplicates(subset=['numbers', 'time'].dt.date, keep='first')
+        df = df.sort_values('time', ascending=True)
         
         df.to_csv(DATA_FILE, index=False)
     
@@ -248,8 +251,17 @@ def get_statistics(df):
         'least_common': counter.most_common()[:-6:-1],
         'hot_numbers': [n for n, c in counter.most_common(3)],
         'cold_numbers': [n for n, c in counter.most_common()[:-4:-1]],
-        'avg_draws_per_day': len(df) / max(1, (df['time'].max() - df['time'].min()).days)
     }
+    
+    # Calculate average draws per day if we have time data
+    if not df.empty and 'time' in df.columns:
+        try:
+            df['time'] = pd.to_datetime(df['time'])
+            days_diff = (df['time'].max() - df['time'].min()).days
+            if days_diff > 0:
+                stats['avg_draws_per_day'] = len(df) / days_diff
+        except:
+            pass
     
     return stats
 
@@ -279,18 +291,23 @@ def main():
                 "Nhập nhiều kỳ (mỗi dòng 5 số)",
                 height=200,
                 placeholder="Ví dụ:\n12345\n67890\n54321\n...",
-                help="Mỗi dòng là một kỳ gồm 5 chữ số"
+                help="Mỗi dòng là một kỳ gồm 5 chữ số",
+                key="data_input"
             )
             
-            if st.button("💾 Lưu dữ liệu", type="primary", use_container_width=True):
-                lines = [x.strip() for x in raw.splitlines() if x.strip()]
-                saved = save_data(lines)
-                
-                if saved > 0:
-                    st.success(f"✅ Đã lưu {saved} kỳ hợp lệ")
-                    st.rerun()
+            if st.button("💾 Lưu dữ liệu", type="primary", use_container_width=True, key="save_button"):
+                if raw.strip():
+                    lines = [x.strip() for x in raw.splitlines() if x.strip()]
+                    saved = save_data(lines)
+                    
+                    if saved > 0:
+                        st.success(f"✅ Đã lưu {saved} kỳ hợp lệ")
+                        # Clear the input after saving
+                        st.rerun()
+                    else:
+                        st.error("❌ Không có dữ liệu hợp lệ (cần đúng 5 chữ số mỗi dòng)")
                 else:
-                    st.error("❌ Không có dữ liệu hợp lệ")
+                    st.warning("⚠️ Vui lòng nhập dữ liệu trước khi lưu")
         
         with col2:
             st.subheader("📁 Dữ liệu hiện có")
@@ -298,33 +315,59 @@ def main():
             
             if not df.empty:
                 st.metric("Tổng số kỳ", len(df))
-                st.metric("Dữ liệu mới nhất", df['time'].max()[:10])
                 
-                if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
+                # Show most recent date
+                try:
+                    df['time'] = pd.to_datetime(df['time'])
+                    latest = df['time'].max().strftime("%d/%m/%Y")
+                    st.metric("Dữ liệu mới nhất", latest)
+                except:
+                    st.metric("Dữ liệu mới nhất", "N/A")
+                
+                # Show sample of recent data
+                with st.expander("Xem 5 kỳ gần nhất"):
+                    st.dataframe(
+                        df.tail(5)[['time', 'numbers']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                if st.button("🔄 Làm mới", use_container_width=True, key="refresh_button"):
                     st.rerun()
             else:
-                st.warning("Chưa có dữ liệu")
+                st.info("📭 Chưa có dữ liệu")
+                st.caption("Nhập dữ liệu ở ô bên trái để bắt đầu")
     
     # ============ TAB 2: AI ANALYSIS ============
     with tab2:
         df = load_data()
         
         if df.empty:
-            st.warning("Vui lòng nhập dữ liệu trước khi phân tích")
+            st.warning("⏳ Vui lòng nhập dữ liệu trước khi phân tích")
+            st.info("Chuyển sang tab '📥 Nhập liệu' để thêm dữ liệu")
         else:
             # Prepare data for AI
-            numbers_history = [parse_numbers(nums) for nums in df['numbers'].tolist()]
+            numbers_history = [parse_numbers(nums) for nums in df['numbers'].tolist() if parse_numbers(nums)]
             
             # Get top numbers
             stats = get_statistics(df)
+            
+            if not stats:
+                st.warning("Không thể phân tích dữ liệu hiện có")
+                return
+            
             top_numbers = [n for n, _ in stats.get('most_common', [])[:5]]
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 st.subheader("🎯 Số trung tâm")
-                if top_numbers:
-                    groups = list(combinations(top_numbers[:4], 3))[:2]
+                if top_numbers and len(top_numbers) >= 3:
+                    # Create combinations
+                    if len(top_numbers) >= 4:
+                        groups = list(combinations(top_numbers[:4], 3))[:2]
+                    else:
+                        groups = list(combinations(top_numbers, 3))[:2]
                     
                     if len(groups) > 0:
                         st.metric(
@@ -338,52 +381,65 @@ def main():
                             "".join(map(str, groups[1])),
                             delta="Dự phòng"
                         )
+                else:
+                    st.info("Cần thêm dữ liệu để tạo tổ hợp")
             
             with col2:
                 st.subheader("🧠 AI Dự đoán")
                 ai_pick = ai.generate_ai_pick(numbers_history, top_numbers)
                 
-                st.metric(
-                    "Lựa chọn AI", 
-                    ai_pick,
-                    delta="Độ tin cậy cao"
-                )
-                
-                # AI confidence
-                if len(numbers_history) >= 10:
-                    confidence = min(85, 60 + len(numbers_history) // 10)
-                    st.progress(confidence/100, text=f"Độ tin cậy: {confidence}%")
+                if ai_pick != "--":
+                    st.metric(
+                        "Lựa chọn AI", 
+                        ai_pick,
+                        delta="Độ tin cậy cao"
+                    )
+                    
+                    # AI confidence
+                    if len(numbers_history) >= 10:
+                        confidence = min(85, 60 + len(numbers_history) // 10)
+                        st.progress(confidence/100, text=f"Độ tin cậy: {confidence}%")
+                else:
+                    st.info("AI đang phân tích...")
             
             with col3:
                 st.subheader("⚠️ Cảnh báo AI")
-                exclusions = ai.predict_exclusions(numbers_history, top_numbers)
-                
-                if exclusions:
-                    st.warning(f"Tránh số: {', '.join(map(str, exclusions))}")
+                if len(numbers_history) >= 5:
+                    exclusions = ai.predict_exclusions(numbers_history, top_numbers)
+                    
+                    if exclusions:
+                        st.warning(f"Tránh số: {', '.join(map(str, exclusions))}")
+                    else:
+                        st.success("Không có cảnh báo đặc biệt")
                 else:
-                    st.info("Không có cảnh báo đặc biệt")
+                    st.info("Cần thêm dữ liệu để phân tích")
             
             st.divider()
             
             # Pattern analysis
-            st.subheader("📈 Phân tích mẫu số")
-            patterns = ai.analyze_patterns(numbers_history)
-            
-            if patterns:
-                col1, col2 = st.columns(2)
+            if len(numbers_history) >= 10:
+                st.subheader("📈 Phân tích mẫu số")
+                patterns = ai.analyze_patterns(numbers_history)
                 
-                with col1:
-                    st.write("**Cặp số thường xuất hiện:**")
-                    for pair, count in patterns['consecutive_pairs'].most_common(5):
-                        st.write(f"`{pair[0]}{pair[1]}`: {count} lần")
-                
-                with col2:
-                    if patterns['digit_sum_trend']:
-                        avg_sum = np.mean(patterns['digit_sum_trend']) % 10
-                        st.write(f"**Tổng số trung bình (mod 10):** `{avg_sum:.1f}`")
-                        
-                        odd_ratio = np.mean(patterns['odd_even_ratio'])
-                        st.write(f"**Tỉ lệ số lẻ:** `{odd_ratio:.1%}`")
+                if patterns:
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Cặp số thường xuất hiện:**")
+                        for pair, count in patterns['consecutive_pairs'].most_common(5):
+                            st.code(f"{pair[0]}{pair[1]}: {count} lần")
+                    
+                    with col2:
+                        if patterns['digit_sum_trend']:
+                            avg_sum = np.mean(patterns['digit_sum_trend']) % 10
+                            st.write(f"**Tổng số trung bình (mod 10):**")
+                            st.metric("Giá trị", f"{avg_sum:.1f}")
+                            
+                            odd_ratio = np.mean(patterns['odd_even_ratio'])
+                            st.write(f"**Tỉ lệ số lẻ:**")
+                            st.metric("Tỉ lệ", f"{odd_ratio:.1%}")
+            else:
+                st.info("Cần ít nhất 10 kỳ để phân tích pattern")
     
     # ============ TAB 3: STATISTICS ============
     with tab3:
@@ -407,75 +463,95 @@ def main():
                 
                 st.write("**Số xuất hiện nhiều nhất:**")
                 for num, count in stats['most_common'][:3]:
-                    st.write(f"`{num}`: {count} lần ({stats['percentage'][num]})")
+                    percentage = stats['percentage'].get(num, "0%")
+                    st.write(f"**{num}**: {count} lần ({percentage})")
                 
                 st.write("**Số xuất hiện ít nhất:**")
                 for num, count in stats['least_common'][:3]:
-                    st.write(f"`{num}`: {count} lần ({stats['percentage'][num]})")
+                    percentage = stats['percentage'].get(num, "0%")
+                    st.write(f"**{num}**: {count} lần ({percentage})")
             
             st.divider()
             
             # Frequency chart
             st.subheader("📈 Biểu đồ tần suất")
-            freq_df = pd.DataFrame.from_dict(stats['frequency'], orient='index', columns=['count'])
-            freq_df = freq_df.sort_values('count', ascending=False)
-            st.bar_chart(freq_df)
+            if stats['frequency']:
+                freq_df = pd.DataFrame.from_dict(stats['frequency'], orient='index', columns=['count'])
+                freq_df = freq_df.sort_values('count', ascending=False)
+                st.bar_chart(freq_df)
             
             # Recent data
             st.subheader("📋 Dữ liệu gần đây")
+            display_df = df.tail(10).copy()
+            
+            # Format time for display
+            if 'time' in display_df.columns:
+                try:
+                    display_df['time'] = pd.to_datetime(display_df['time']).dt.strftime('%d/%m/%Y %H:%M')
+                except:
+                    pass
+            
             st.dataframe(
-                df.tail(10).sort_values('time', ascending=False),
+                display_df[['time', 'numbers']],
                 use_container_width=True,
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "time": "Thời gian",
+                    "numbers": "Số"
+                }
             )
         else:
-            st.info("Chưa có dữ liệu để hiển thị thống kê")
+            st.info("📭 Chưa có dữ liệu để hiển thị thống kê")
+            st.caption("Nhập dữ liệu ở tab '📥 Nhập liệu' để bắt đầu")
     
     # ============ TAB 4: AI SETTINGS ============
     with tab4:
         st.subheader("⚙️ Cấu hình AI")
+        
+        # Load current config
+        ai.load_config()
         
         col1, col2 = st.columns(2)
         
         with col1:
             weight_recent = st.slider(
                 "Trọng số dữ liệu gần đây",
-                0.1, 0.9, 0.6, 0.1,
+                0.1, 0.9, float(ai.config.get('weight_recent', 0.6)), 0.1,
                 help="Ảnh hưởng của các kỳ gần nhất"
             )
             
             weight_frequency = st.slider(
                 "Trọng số tần suất",
-                0.1, 0.9, 0.3, 0.1,
+                0.1, 0.9, float(ai.config.get('weight_frequency', 0.3)), 0.1,
                 help="Ảnh hưởng của tần suất xuất hiện"
             )
             
             avoid_recent = st.slider(
                 "Tránh số trùng (kỳ)",
-                1, 10, 3, 1,
+                1, 10, int(ai.config.get('avoid_recent_count', 3)), 1,
                 help="Số kỳ gần nhất để tránh trùng số"
             )
         
         with col2:
             weight_pattern = st.slider(
                 "Trọng số mẫu pattern",
-                0.0, 0.5, 0.1, 0.05,
+                0.0, 0.5, float(ai.config.get('weight_pattern', 0.1)), 0.05,
                 help="Ảnh hưởng của pattern phát hiện"
             )
             
             hot_threshold = st.slider(
                 "Ngưỡng số nóng (%)",
-                5, 30, 15, 1,
+                5, 30, int(ai.config.get('hot_number_threshold', 0.15) * 100), 1,
                 help="Tỉ lệ xuất hiện tối thiểu để coi là số nóng"
             ) / 100
             
             history_window = st.slider(
                 "Cửa sổ phân tích",
-                5, 50, 20, 5,
+                5, 50, int(ai.history_window), 5,
                 help="Số kỳ dùng để phân tích xu hướng"
             )
         
-        if st.button("💾 Lưu cấu hình AI", type="primary"):
+        if st.button("💾 Lưu cấu hình AI", type="primary", use_container_width=True):
             config = {
                 "weight_recent": weight_recent,
                 "weight_frequency": weight_frequency,
@@ -484,11 +560,15 @@ def main():
                 "hot_number_threshold": hot_threshold
             }
             
-            with open(AI_CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            st.success("✅ Đã lưu cấu hình AI")
-            st.rerun()
+            try:
+                with open(AI_CONFIG_FILE, 'w') as f:
+                    json.dump(config, f, indent=2)
+                ai.history_window = history_window
+                
+                st.success("✅ Đã lưu cấu hình AI")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Lỗi khi lưu cấu hình: {e}")
         
         st.divider()
         
@@ -497,26 +577,26 @@ def main():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🗑️ Xóa dữ liệu cũ (trước 30 ngày)", use_container_width=True):
-                df = load_data()
-                if not df.empty:
-                    df['time'] = pd.to_datetime(df['time'])
-                    cutoff = datetime.now() - timedelta(days=30)
-                    df = df[df['time'] >= cutoff]
-                    df.to_csv(DATA_FILE, index=False)
-                    st.success("✅ Đã xóa dữ liệu cũ")
+            if st.button("🗑️ Xóa toàn bộ dữ liệu", use_container_width=True, type="secondary"):
+                if os.path.exists(DATA_FILE):
+                    os.remove(DATA_FILE)
+                    st.success("✅ Đã xóa toàn bộ dữ liệu")
                     st.rerun()
         
         with col2:
             if st.button("📥 Xuất dữ liệu", use_container_width=True):
                 df = load_data()
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="📄 Tải file CSV",
-                    data=csv,
-                    file_name=f"numcore_export_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
+                if not df.empty:
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📄 Tải file CSV",
+                        data=csv,
+                        file_name=f"numcore_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("Không có dữ liệu để xuất")
     
     # ============ FOOTER ============
     st.divider()
@@ -524,13 +604,14 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.caption(f"📊 Dữ liệu: {len(load_data())} kỳ")
+        df_count = len(load_data())
+        st.caption(f"📊 Dữ liệu: {df_count} kỳ")
     
     with col2:
         st.caption("🤖 AI: Enhanced Pattern Recognition")
     
     with col3:
-        st.caption("NUMCORE AI+ v7.0 – Ổn định cao – Dự đoán thông minh")
+        st.caption("NUMCORE AI+ v7.1 – Đã sửa lỗi nhập liệu")
 
 if __name__ == "__main__":
     main()
