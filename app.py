@@ -5,37 +5,37 @@ from datetime import datetime
 import os
 import re
 
-# ================== CONFIG ==================
-st.set_page_config(
-    page_title="NUMCORE AI v6.6",
-    layout="centered"
-)
-
+# ================= CONFIG =================
+st.set_page_config(page_title="NUMCORE AI v6.6", layout="centered")
 DATA_FILE = "data.csv"
 
-# ================== DATA ==================
+# ================= DATA =================
 def load_data():
     if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
+        df = pd.read_csv(DATA_FILE)
+        df["numbers"] = df["numbers"].astype(str)
+        return df
     return pd.DataFrame(columns=["time", "numbers"])
 
 def save_numbers(nums):
     df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_rows = [{"time": now, "numbers": n} for n in nums]
-    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+    rows = [{"time": now, "numbers": n} for n in nums]
+    df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ================== AI CORE ==================
-def ai_center_numbers(df):
-    valid = []
+def clean_numbers(df):
+    return [
+        n for n in df["numbers"]
+        if isinstance(n, str) and n.isdigit() and len(n) == 5
+    ]
 
-    for n in df["numbers"]:
-        if isinstance(n, str) and n.isdigit() and len(n) == 5:
-            valid.append(n)
+# ================= AI CORE =================
+def ai_center_numbers(df):
+    valid = clean_numbers(df)
 
     if len(valid) < 10:
-        return ["?", "?", "?", "?", "?"]
+        return None
 
     all_digits = []
     recent_digits = []
@@ -51,79 +51,70 @@ def ai_center_numbers(df):
 
     score = {}
     for d in "0123456789":
-        score[d] = freq_all.get(d, 0) * 0.3 + freq_recent.get(d, 0) * 0.4
+        score[d] = freq_all.get(d, 0) * 0.4 + freq_recent.get(d, 0) * 0.6
 
-    # phá bệt
-    if len(valid) >= 2:
-        bad = set(valid[-1]) & set(valid[-2])
-        for b in bad:
-            score[b] *= 0.3
+    # phá lặp 2 kỳ cuối
+    last_overlap = set(valid[-1]) & set(valid[-2])
+    for d in last_overlap:
+        score[d] *= 0.3
 
-    top = sorted(score.items(), key=lambda x: x[1], reverse=True)[:5]
-    return [x[0] for x in top]
+    top = sorted(score, key=score.get, reverse=True)[:5]
+    return top
 
-def ai_strategy_number(center):
-    c = Counter(center)
-    return c.most_common(1)[0][0]
+def ai_strategy(center):
+    return Counter(center).most_common(1)[0][0]
 
-# ================== UI ==================
+# ================= UI =================
 st.title("🧠 NUMCORE AI v6.6")
 st.caption("Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu")
 
 tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🎯 Phân tích & Dự đoán"])
 
-# ================== TAB 1 ==================
+# ---------- TAB 1 ----------
 with tab1:
-    st.subheader("Nhập kết quả (mỗi dòng 5 số)")
+    st.subheader("Nhập nhiều kỳ (mỗi dòng 5 số)")
     raw = st.text_area("Ví dụ:\n12345\n67890\n90876")
 
-    if st.button("💾 Lưu dữ liệu"):
+    if st.button("💾 Lưu"):
         lines = raw.splitlines()
-        valid = []
-        invalid = 0
-
-        for l in lines:
-            l = l.strip()
-            if re.fullmatch(r"\d{5}", l):
-                valid.append(l)
-            else:
-                invalid += 1
-
+        valid = [l.strip() for l in lines if re.fullmatch(r"\d{5}", l.strip())]
         if valid:
             save_numbers(valid)
             st.success(f"Đã lưu {len(valid)} kỳ")
-        if invalid:
-            st.warning(f"Bỏ qua {invalid} dòng sai định dạng")
+        else:
+            st.warning("Không có dữ liệu hợp lệ")
 
     df = load_data()
-    st.markdown(f"📊 **Tổng kỳ:** {len(df)}")
+    st.markdown(f"📊 **Tổng kỳ hợp lệ:** {len(clean_numbers(df))}")
     st.dataframe(df.tail(20), use_container_width=True)
 
-# ================== TAB 2 ==================
+# ---------- TAB 2 ----------
 with tab2:
     df = load_data()
+    valid = clean_numbers(df)
 
-    if len(df) < 10:
-        st.warning("Cần tối thiểu 10 kỳ để AI hoạt động")
+    if len(valid) < 10:
+        st.warning("Chưa đủ dữ liệu sạch để AI phân tích")
     else:
         center = ai_center_numbers(df)
 
         st.subheader("🎯 SỐ TRUNG TÂM (AI)")
-        col1, col2 = st.columns(2)
-        col1.metric("Tổ hợp A", "".join(center[:3]))
-        col2.metric("Tổ hợp B", "".join(center[2:]))
+        c1, c2 = st.columns(2)
+        c1.metric("Tổ hợp A", "".join(center[:3]))
+        c2.metric("Tổ hợp B", "".join(center[2:]))
 
         st.divider()
 
         st.subheader("🧠 SỐ CHIẾN LƯỢC")
-        strategy = ai_strategy_number(center)
-        st.metric("AI chọn lọc", strategy)
+        st.metric("AI chọn lọc", ai_strategy(center))
 
         st.divider()
 
         st.subheader("📈 Thống kê nhanh")
-        freq = Counter("".join(df["numbers"].dropna()))
-        stat = pd.DataFrame(freq.items(), columns=["Số", "Tần suất"]).sort_values("Tần suất", ascending=False)
+        freq = Counter("".join(valid))
+        stat = pd.DataFrame(freq.items(), columns=["Số", "Tần suất"]).sort_values(
+            "Tần suất", ascending=False
+        )
         st.dataframe(stat, use_container_width=True)
 
-st.caption("⚠ Công cụ phân tích – Không cam kết trúng")
+st.caption("⚠ Công cụ phân tích xác suất – không cam kết trúng")
