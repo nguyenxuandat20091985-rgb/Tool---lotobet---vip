@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
-from collections import Counter, defaultdict
+from collections import Counter
 from itertools import combinations
 from datetime import datetime
 import os
-import math
 
 # ================= CONFIG =================
-st.set_page_config(page_title="NUMCORE", layout="centered")
+st.set_page_config(page_title="NUMCORE v6.6", layout="centered")
 DATA_FILE = "data.csv"
 
 # ================= DATA =================
@@ -16,23 +15,26 @@ def load_data():
         return pd.DataFrame(columns=["time", "numbers"])
     df = pd.read_csv(DATA_FILE)
     df["numbers"] = df["numbers"].astype(str)
-    return df[["time", "numbers"]]
+    return df
 
 def save_many(values):
     df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     rows = []
+
     for v in values:
         if v.isdigit() and len(v) == 5:
             rows.append({"time": now, "numbers": v})
+
     if rows:
         df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
         df.to_csv(DATA_FILE, index=False)
+
     return len(rows)
 
 # ================= CORE =================
 def parse_numbers(v):
-    return [int(x) for x in v if x.isdigit()][:5]
+    return [int(x) for x in v if x.isdigit()]
 
 def flatten(df):
     out = []
@@ -40,104 +42,84 @@ def flatten(df):
         out.extend(parse_numbers(v))
     return out
 
-def freq_window(df, n):
-    nums = []
-    for v in df.tail(n)["numbers"]:
-        nums.extend(parse_numbers(v))
-    return Counter(nums)
+def recent_freq(df, window=20):
+    return Counter(flatten(df.tail(window)))
 
-def gap_score(df):
-    pos = defaultdict(list)
-    for i, v in enumerate(df["numbers"]):
-        for n in parse_numbers(v):
-            pos[n].append(i)
-    score = {}
+def ai_score(freq_all, freq_recent, total_rounds):
+    scores = {}
     for n in range(10):
-        if n not in pos or len(pos[n]) < 2:
-            score[n] = -2
-        else:
-            g = pos[n][-1] - pos[n][-2]
-            score[n] = 2 if 2 <= g <= 6 else -1
-    return score
+        fa = freq_all.get(n, 0)
+        fr = freq_recent.get(n, 0)
 
-# ================= AI ENSEMBLE CORE =================
-def ai_super_engine(df):
-    score = defaultdict(float)
+        if fr == 0:
+            continue  # số chết → loại
 
-    all_freq = Counter(flatten(df))
-    mean = sum(all_freq.values()) / 10 if all_freq else 0
+        score = (
+            fr * 3 +                 # đang lên
+            fa * 0.5 -               # không quá nóng
+            abs(fa - total_rounds*0.5) * 0.05
+        )
 
-    # 1️⃣ Tần suất đa khung
-    for w, wgt in [(5,2),(10,1.6),(20,1.2),(40,0.8)]:
-        fw = freq_window(df, min(w,len(df)))
-        for n in range(10):
-            score[n] += fw.get(n,0) * wgt
-
-    # 2️⃣ Xu hướng
-    f10 = freq_window(df, min(10,len(df)))
-    f20 = freq_window(df, min(20,len(df)))
-    for n in range(10):
-        score[n] += max(0, f10.get(n,0) - f20.get(n,0)*0.7)
-
-    # 3️⃣ Né số bão hòa
-    for n in range(10):
-        if all_freq.get(n,0) > mean*1.7:
-            score[n] -= 3
-
-    # 4️⃣ Né số chết
-    for n in range(10):
-        if all_freq.get(n,0) == 0:
-            score[n] -= 5
-
-    # 5️⃣ Gap
-    gap = gap_score(df)
-    for n in range(10):
-        score[n] += gap[n]
-
-    # 6️⃣ Ổn định
-    for n in range(10):
-        score[n] += 0.5 if f10.get(n,0)>0 else -0.5
-
-    # ================= KẾT QUẢ =================
-    ranked = sorted(score.items(), key=lambda x:x[1], reverse=True)
-    top5 = [n for n,s in ranked if s>0][:5]
-
-    best_pair = "--"
-    if len(top5) >= 2:
-        pair_scores = {}
-        for a,b in combinations(top5,2):
-            pair_scores[f"{a}{b}"] = score[a] + score[b]
-        best_pair = max(pair_scores, key=pair_scores.get)
-
-    return top5, best_pair, score
+        scores[n] = score
+    return scores
 
 # ================= UI =================
-st.title("🔷 NUMCORE v6.6")
-st.caption("AI Ensemble siêu lọc – Ưu tiên sống – Không random")
+st.title("🔷 NUMCORE AI v6.6")
+st.caption("AI lọc cầu – Ưu tiên sống – Không all-in")
 
-tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu","🎯 AI Phân tích"])
+tab1, tab2 = st.tabs(["📥 Dữ liệu", "🎯 Phân tích"])
 
+# ===== TAB 1 =====
 with tab1:
-    raw = st.text_area("Mỗi dòng 1 kỳ (5 số)", height=160)
+    raw = st.text_area("Mỗi dòng = 1 kỳ (5 số)", height=150)
+
     if st.button("💾 Lưu dữ liệu"):
         saved = save_many([x.strip() for x in raw.splitlines()])
-        st.success(f"Đã lưu {saved} kỳ") if saved else st.error("Không có dữ liệu hợp lệ")
+        if saved > 0:
+            st.success(f"Đã lưu {saved} kỳ")
+        else:
+            st.error("Không có dữ liệu hợp lệ")
+
     df = load_data()
     if not df.empty:
         st.dataframe(df.tail(10), use_container_width=True)
 
+# ===== TAB 2 =====
 with tab2:
     df = load_data()
-    if len(df) < 8:
-        st.warning("Chưa đủ dữ liệu")
-    else:
-        top5, pair, score = ai_super_engine(df)
 
-        st.subheader("🔥 5 SỐ CHIẾN LƯỢC MẠNH NHẤT")
-        st.write(" ".join(str(x) for x in top5))
+    if len(df) < 10:
+        st.warning("Chưa đủ dữ liệu để AI hoạt động")
+    else:
+        all_nums = flatten(df)
+        freq_all = Counter(all_nums)
+        freq_recent = recent_freq(df)
+
+        scores = ai_score(freq_all, freq_recent, len(df))
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+        picks = [str(n) for n, _ in ranked[:5]]
+
+        st.subheader("🎯 SỐ TRUNG TÂM")
+        top = [n for n, _ in freq_all.most_common(6)]
+        groups = list(combinations(top, 3))[:2]
+
+        c1, c2 = st.columns(2)
+        if len(groups) > 0:
+            c1.metric("Trung tâm A", "".join(map(str, groups[0])))
+        if len(groups) > 1:
+            c2.metric("Trung tâm B", "".join(map(str, groups[1])))
 
         st.divider()
-        st.subheader("🎯 2 TINH ĐÁNH CHÍNH")
-        st.success(pair if pair!="--" else "AI từ chối đánh")
 
-st.caption("NUMCORE v6.6 – AI Ensemble siêu lọc – Không số chập")
+        st.subheader("🧠 5 SỐ CHIẾN LƯỢC (AI)")
+        if len(picks) < 2:
+            st.error("🔴 Cầu xấu – AI khuyên nghỉ")
+        else:
+            st.success(" • ".join(picks))
+            st.info("👉 Đánh nhỏ – xoay vòng – KHÔNG all-in")
+
+        st.divider()
+        st.write(f"📊 Kỳ đã phân tích: **{len(df)}**")
+
+st.caption("NUMCORE v6.6 – AI lọc cầu – Ổn định – Không ảo")
