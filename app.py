@@ -33,7 +33,7 @@ class TwoNumberAI:
         self.load_pair_history()
     
     def load_config(self):
-        """Load AI configuration"""
+        """Load AI configuration with error handling"""
         default_config = {
             "algorithm_weights": {
                 "frequency_based": 0.25,
@@ -49,28 +49,86 @@ class TwoNumberAI:
             "min_confidence": 60
         }
         
-        if os.path.exists(AI_CONFIG_FILE):
-            with open(AI_CONFIG_FILE, 'r') as f:
-                self.config = {**default_config, **json.load(f)}
-        else:
+        try:
+            if os.path.exists(AI_CONFIG_FILE):
+                with open(AI_CONFIG_FILE, 'r') as f:
+                    loaded_config = json.load(f)
+                    # Merge with defaults
+                    self.config = {**default_config, **loaded_config}
+            else:
+                self.config = default_config
+        except (json.JSONDecodeError, IOError):
+            # If file is corrupted, use defaults
             self.config = default_config
+            # Try to save fresh config
+            self.save_config()
+    
+    def save_config(self):
+        """Save AI configuration"""
+        try:
+            with open(AI_CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except:
+            pass  # Silently fail if can't save
     
     def load_pair_history(self):
-        """Load historical pair data"""
-        if os.path.exists(PAIR_HISTORY_FILE):
-            with open(PAIR_HISTORY_FILE, 'r') as f:
-                data = json.load(f)
-                self.pair_frequency = Counter(data.get('pair_frequency', {}))
-                self.position_pairs = defaultdict(Counter, data.get('position_pairs', {}))
+        """Load historical pair data with error handling"""
+        try:
+            if os.path.exists(PAIR_HISTORY_FILE):
+                with open(PAIR_HISTORY_FILE, 'r') as f:
+                    data = json.load(f)
+                    
+                    # Safely load pair_frequency
+                    pair_freq_data = data.get('pair_frequency', {})
+                    if isinstance(pair_freq_data, dict):
+                        self.pair_frequency = Counter(pair_freq_data)
+                    else:
+                        self.pair_frequency = Counter()
+                    
+                    # Safely load position_pairs
+                    pos_pairs_data = data.get('position_pairs', {})
+                    if isinstance(pos_pairs_data, dict):
+                        self.position_pairs = defaultdict(Counter)
+                        for key, value in pos_pairs_data.items():
+                            if isinstance(value, dict):
+                                # Parse key from string to tuple
+                                try:
+                                    if isinstance(key, str):
+                                        # Convert "(1, 2)" to tuple (1, 2)
+                                        key = eval(key)
+                                    self.position_pairs[key] = Counter(value)
+                                except:
+                                    continue
+                    else:
+                        self.position_pairs = defaultdict(Counter)
+            else:
+                self.pair_frequency = Counter()
+                self.position_pairs = defaultdict(Counter)
+        except (json.JSONDecodeError, IOError, SyntaxError):
+            # If file is corrupted, start fresh
+            self.pair_frequency = Counter()
+            self.position_pairs = defaultdict(Counter)
     
     def save_pair_history(self):
-        """Save pair history data"""
-        data = {
-            'pair_frequency': dict(self.pair_frequency),
-            'position_pairs': dict(self.position_pairs)
-        }
-        with open(PAIR_HISTORY_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
+        """Save pair history data with safe serialization"""
+        try:
+            # Convert defaultdict and Counter to serializable dicts
+            pair_freq_dict = dict(self.pair_frequency)
+            
+            # Convert position_pairs keys to strings for JSON serialization
+            pos_pairs_dict = {}
+            for key, counter in self.position_pairs.items():
+                pos_pairs_dict[str(key)] = dict(counter)
+            
+            data = {
+                'pair_frequency': pair_freq_dict,
+                'position_pairs': pos_pairs_dict
+            }
+            
+            with open(PAIR_HISTORY_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except:
+            pass  # Silently fail if can't save
     
     def extract_pairs_from_history(self, numbers_history):
         """Extract all 2-number pairs from history"""
@@ -141,7 +199,10 @@ class TwoNumberAI:
             
             pair_scores[pair] = score
         
-        return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        # Return sorted results, handle empty case
+        if pair_scores:
+            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def algorithm_position_based(self, numbers_history):
         """Algorithm 2: Position-based pair prediction"""
@@ -183,7 +244,9 @@ class TwoNumberAI:
             score = freq * (pos1_strength + pos2_strength) * 0.5
             pair_scores[pair] = score
         
-        return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        if pair_scores:
+            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def algorithm_trend_based(self, numbers_history):
         """Algorithm 3: Trend-based pair prediction"""
@@ -225,7 +288,9 @@ class TwoNumberAI:
                     score = trend_score * (1 + recent_together * 0.3)
                     pair_scores[(num1, num2)] = score
         
-        return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        if pair_scores:
+            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def algorithm_pattern_based(self, numbers_history):
         """Algorithm 4: Pattern-based pair prediction"""
@@ -250,7 +315,9 @@ class TwoNumberAI:
                     score = count * (1 / (pattern + 1))  # Smaller gaps get higher scores
                     pattern_scores[tuple(sorted(pair))] = score
         
-        return sorted(pattern_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        if pattern_scores:
+            return sorted(pattern_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def algorithm_statistical(self, numbers_history):
         """Algorithm 5: Statistical analysis"""
@@ -287,7 +354,9 @@ class TwoNumberAI:
                     # High ratio means they appear together more than expected
                     pair_probabilities[(num1, num2)] = ratio
         
-        return sorted(pair_probabilities.items(), key=lambda x: x[1], reverse=True)[:10]
+        if pair_probabilities:
+            return sorted(pair_probabilities.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def algorithm_neural_inspired(self, numbers_history, hot_numbers):
         """Algorithm 6: Neural network inspired approach"""
@@ -327,7 +396,9 @@ class TwoNumberAI:
                 
                 pair_scores[(num1, num2)] = score
         
-        return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        if pair_scores:
+            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        return []
     
     def combine_algorithms(self, numbers_history, hot_numbers):
         """Combine results from all algorithms"""
@@ -381,15 +452,19 @@ class TwoNumberAI:
                     combined_scores[pair] += normalized_score * weight
         
         # Apply recent appearance penalty
-        recent_pairs = self.extract_pairs_from_history(numbers_history[-self.config['avoid_recent_pairs']:])
-        for pair in recent_pairs:
-            if pair in combined_scores:
-                combined_scores[pair] *= 0.7  # Reduce score for recent pairs
+        try:
+            recent_pairs = self.extract_pairs_from_history(numbers_history[-self.config['avoid_recent_pairs']:])
+            for pair in recent_pairs:
+                if pair in combined_scores:
+                    combined_scores[pair] *= 0.7  # Reduce score for recent pairs
+        except:
+            pass
         
         # Sort by combined score
-        sorted_pairs = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
-        
-        return sorted_pairs
+        if combined_scores:
+            sorted_pairs = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            return sorted_pairs
+        return []
     
     def predict_top_pairs(self, numbers_history, hot_numbers, num_pairs=5):
         """Predict top N pairs with highest probability"""
@@ -397,7 +472,10 @@ class TwoNumberAI:
             return [], {}
         
         # Update statistics
-        self.update_pair_statistics(numbers_history)
+        try:
+            self.update_pair_statistics(numbers_history)
+        except:
+            pass
         
         # Get combined predictions
         all_predictions = self.combine_algorithms(numbers_history, hot_numbers)
@@ -422,7 +500,10 @@ class TwoNumberAI:
             confidence = min(98, base_confidence + data_boost)
             
             # Get algorithm contributions
-            algo_contributions = self.get_algorithm_contributions(pair, numbers_history, hot_numbers)
+            try:
+                algo_contributions = self.get_algorithm_contributions(pair, numbers_history, hot_numbers)
+            except:
+                algo_contributions = {}
             
             confidence_details[pair] = {
                 'confidence': confidence,
@@ -450,7 +531,11 @@ class TwoNumberAI:
         
         for algo_name, method in algo_methods.items():
             try:
-                results = method(numbers_history, hot_numbers)
+                if algo_name == 'neural':
+                    results = method(numbers_history, hot_numbers)
+                else:
+                    results = method(numbers_history, hot_numbers) if algo_name == 'frequency' else method(numbers_history)
+                
                 if results:
                     # Find this pair in results
                     for result_pair, score in results:
@@ -465,11 +550,14 @@ class TwoNumberAI:
     def count_recent_appearances(self, pair, numbers_history, window=10):
         """Count how many times pair appeared recently"""
         count = 0
-        recent_history = numbers_history[-window:] if len(numbers_history) > window else numbers_history
-        
-        for numbers in recent_history:
-            if pair[0] in numbers and pair[1] in numbers:
-                count += 1
+        try:
+            recent_history = numbers_history[-window:] if len(numbers_history) > window else numbers_history
+            
+            for numbers in recent_history:
+                if pair[0] in numbers and pair[1] in numbers:
+                    count += 1
+        except:
+            count = 0
         
         return count
     
@@ -507,7 +595,7 @@ class TwoNumberAI:
 
 # ================= DATA FUNCTIONS =================
 def load_data():
-    """Load historical data"""
+    """Load historical data with error handling"""
     if not os.path.exists(DATA_FILE):
         return pd.DataFrame(columns=["time", "numbers", "source"])
     
@@ -529,41 +617,44 @@ def load_data():
         return df[["time", "numbers", "source"]]
     
     except Exception as e:
-        st.error(f"Lỗi đọc dữ liệu: {e}")
+        # If CSV is corrupted, create fresh
         return pd.DataFrame(columns=["time", "numbers", "source"])
 
 def save_data(values, source="manual"):
     """Save multiple entries with source tracking"""
-    df = load_data()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    rows = []
-    for v in values:
-        v_str = str(v).strip()
-        if v_str.isdigit() and len(v_str) == 5:
-            rows.append({
-                "time": now, 
-                "numbers": v_str,
-                "source": source
-            })
-    
-    if rows:
-        new_df = pd.DataFrame(rows)
-        df = pd.concat([df, new_df], ignore_index=True)
+    try:
+        df = load_data()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Remove duplicates
-        df = df.drop_duplicates(subset=['numbers'], keep='first')
+        rows = []
+        for v in values:
+            v_str = str(v).strip()
+            if v_str.isdigit() and len(v_str) == 5:
+                rows.append({
+                    "time": now, 
+                    "numbers": v_str,
+                    "source": source
+                })
         
-        # Sort by time
-        try:
-            df['time'] = pd.to_datetime(df['time'])
-            df = df.sort_values('time', ascending=True)
-        except:
-            pass
+        if rows:
+            new_df = pd.DataFrame(rows)
+            df = pd.concat([df, new_df], ignore_index=True)
+            
+            # Remove duplicates
+            df = df.drop_duplicates(subset=['numbers'], keep='first')
+            
+            # Sort by time
+            try:
+                df['time'] = pd.to_datetime(df['time'])
+                df = df.sort_values('time', ascending=True)
+            except:
+                pass
+            
+            df.to_csv(DATA_FILE, index=False)
         
-        df.to_csv(DATA_FILE, index=False)
-    
-    return len(rows)
+        return len(rows)
+    except:
+        return 0
 
 def parse_numbers(v):
     """Parse string to list of integers"""
@@ -577,44 +668,58 @@ def get_statistics(df):
     if df.empty:
         return {}
     
-    all_numbers = []
-    number_sequences = []
-    
-    for nums_str in df['numbers']:
-        nums = parse_numbers(nums_str)
-        if len(nums) == 5:
-            all_numbers.extend(nums)
-            number_sequences.append(nums)
-    
-    if not all_numbers:
+    try:
+        all_numbers = []
+        number_sequences = []
+        
+        for nums_str in df['numbers']:
+            nums = parse_numbers(nums_str)
+            if len(nums) == 5:
+                all_numbers.extend(nums)
+                number_sequences.append(nums)
+        
+        if not all_numbers:
+            return {}
+        
+        counter = Counter(all_numbers)
+        total = len(all_numbers)
+        
+        # Advanced statistics
+        stats = {
+            'total_draws': len(df),
+            'total_digits': total,
+            'frequency': dict(counter),
+            'percentage': {k: f"{(v/total*100):.1f}%" for k, v in counter.items()},
+            'most_common': counter.most_common(10),
+            'least_common': counter.most_common()[:-11:-1],
+            'hot_numbers': [n for n, c in counter.most_common(5)],
+            'warm_numbers': [n for n, c in counter.most_common(10)[5:]],
+            'cold_numbers': [n for n, c in counter.most_common()[:-6:-1]],
+            'number_sequences': number_sequences
+        }
+        
+        return stats
+    except:
         return {}
-    
-    counter = Counter(all_numbers)
-    total = len(all_numbers)
-    
-    # Advanced statistics
-    stats = {
-        'total_draws': len(df),
-        'total_digits': total,
-        'frequency': dict(counter),
-        'percentage': {k: f"{(v/total*100):.1f}%" for k, v in counter.items()},
-        'most_common': counter.most_common(10),
-        'least_common': counter.most_common()[:-11:-1],
-        'hot_numbers': [n for n, c in counter.most_common(5)],
-        'warm_numbers': [n for n, c in counter.most_common(10)[5:]],
-        'cold_numbers': [n for n, c in counter.most_common()[:-6:-1]],
-        'number_sequences': number_sequences
-    }
-    
-    return stats
 
-# ================= UI =================
+# ================= MAIN APP =================
 def main():
     st.title("🎯 NUMCORE AI ULTIMATE - 2 SỐ 5 TÍNH")
     st.caption("6 Thuật toán AI kết hợp - Dự đoán cặp số chính xác nhất - Tối ưu chiến lược")
     
-    # Initialize AI
-    ai = TwoNumberAI()
+    # Initialize AI with error handling
+    try:
+        ai = TwoNumberAI()
+    except Exception as e:
+        st.error("⚠️ Có lỗi khi khởi tạo AI. Đang khởi tạo lại...")
+        # Try to delete corrupted files
+        for file in [AI_CONFIG_FILE, PAIR_HISTORY_FILE]:
+            if os.path.exists(file):
+                try:
+                    os.remove(file)
+                except:
+                    pass
+        ai = TwoNumberAI()
     
     tab1, tab2, tab3, tab4 = st.tabs([
         "📥 Nhập liệu",
@@ -698,16 +803,36 @@ def main():
             
             if len(numbers_history) < 10:
                 st.warning(f"⚠️ Cần ít nhất 10 kỳ để phân tích (hiện có: {len(numbers_history)})")
+                st.info("Tiếp tục nhập dữ liệu để có kết quả chính xác hơn")
+                # Show basic stats anyway
+                if hot_numbers:
+                    st.subheader("📊 Số nóng hiện tại:")
+                    cols = st.columns(5)
+                    for idx, num in enumerate(hot_numbers[:5]):
+                        with cols[idx]:
+                            st.metric(f"Số nóng {idx+1}", num)
                 return
             
             # AI Analysis
             st.subheader("🎯 DỰ ĐOÁN CẶP SỐ 5 TÍNH")
             
             # Get predictions
-            top_pairs, confidence_details = ai.predict_top_pairs(numbers_history, hot_numbers, num_pairs=10)
+            try:
+                top_pairs, confidence_details = ai.predict_top_pairs(numbers_history, hot_numbers, num_pairs=10)
+            except Exception as e:
+                st.error("⚠️ Có lỗi khi phân tích dữ liệu. Vui lòng thử lại.")
+                top_pairs = []
+                confidence_details = {}
             
             if not top_pairs:
-                st.info("Đang phân tích dữ liệu... Vui lòng thử lại sau")
+                st.info("🔍 Đang phân tích dữ liệu... Hãy tiếp tục nhập thêm dữ liệu")
+                # Show hot numbers as fallback
+                if hot_numbers:
+                    st.subheader("🔥 Số nóng đề xuất:")
+                    hot_cols = st.columns(3)
+                    for idx, num in enumerate(hot_numbers[:3]):
+                        with hot_cols[idx]:
+                            st.metric(f"Số nóng {idx+1}", num)
                 return
             
             # Display top predictions
@@ -747,7 +872,10 @@ def main():
             # Strategy recommendations
             st.subheader("🎯 CHIẾN LƯỢC ĐẶT CƯỢC")
             
-            strategies = ai.generate_strategy_recommendations(top_pairs, confidence_details)
+            try:
+                strategies = ai.generate_strategy_recommendations(top_pairs, confidence_details)
+            except:
+                strategies = []
             
             if strategies:
                 strategy_cols = st.columns(min(3, len(strategies)))
@@ -764,7 +892,7 @@ def main():
                         
                         st.caption(f"{strategy['reason']}")
             else:
-                st.info("Chưa có chiến lược đề xuất")
+                st.info("📊 Đang phân tích chiến lược...")
             
             st.divider()
             
@@ -815,7 +943,9 @@ def main():
                                 # Display algorithm scores
                                 for algo, score in algo_scores.items():
                                     if score > 0:
-                                        st.write(f"**{algo}:** {score}")
+                                        st.write(f"**{algo}:** {score:.3f}")
+                            else:
+                                st.write("Chưa có dữ liệu phân tích")
             
             st.divider()
             
@@ -869,24 +999,33 @@ def main():
                 st.subheader("📊 KẾT QUẢ TỪNG THUẬT TOÁN")
                 
                 algorithms = [
-                    ("Tần suất", ai.algorithm_frequency_based),
-                    ("Vị trí", ai.algorithm_position_based),
-                    ("Xu hướng", ai.algorithm_trend_based),
-                    ("Mẫu số", ai.algorithm_pattern_based),
-                    ("Thống kê", ai.algorithm_statistical),
-                    ("Neural", ai.algorithm_neural_inspired)
+                    ("Tần suất", "frequency"),
+                    ("Vị trí", "position"),
+                    ("Xu hướng", "trend"),
+                    ("Mẫu số", "pattern"),
+                    ("Thống kê", "statistical"),
+                    ("Neural", "neural")
                 ]
                 
                 algo_cols = st.columns(3)
-                for idx, (algo_name, algo_func) in enumerate(algorithms):
+                for idx, (algo_name, algo_key) in enumerate(algorithms):
                     with algo_cols[idx % 3]:
                         try:
-                            if algo_name == "Neural":
-                                results = algo_func(numbers_history, hot_numbers)
-                            else:
-                                results = algo_func(numbers_history, hot_numbers) if algo_name == "Tần suất" else algo_func(numbers_history)
-                            
                             st.write(f"**{algo_name}:**")
+                            
+                            # Get results based on algorithm
+                            if algo_key == "frequency":
+                                results = ai.algorithm_frequency_based(numbers_history, hot_numbers)
+                            elif algo_key == "position":
+                                results = ai.algorithm_position_based(numbers_history)
+                            elif algo_key == "trend":
+                                results = ai.algorithm_trend_based(numbers_history)
+                            elif algo_key == "pattern":
+                                results = ai.algorithm_pattern_based(numbers_history)
+                            elif algo_key == "statistical":
+                                results = ai.algorithm_statistical(numbers_history)
+                            elif algo_key == "neural":
+                                results = ai.algorithm_neural_inspired(numbers_history, hot_numbers)
                             
                             if results:
                                 top_3 = results[:3]
@@ -894,14 +1033,20 @@ def main():
                                     st.write(f"{i+1}. {pair[0]}{pair[1]} ({score:.3f})")
                             else:
                                 st.write("Chưa đủ dữ liệu")
-                        except Exception as e:
+                        except:
                             st.write(f"**{algo_name}:** Đang xử lý...")
+            else:
+                st.info("📊 Cần ít nhất 10 kỳ để phân tích thuật toán")
     
     # ============ TAB 4: AI CONFIGURATION ============
     with tab4:
         st.subheader("⚙️ CẤU HÌNH THUẬT TOÁN AI")
         
-        ai.load_config()
+        try:
+            ai.load_config()
+            current_config = ai.config
+        except:
+            current_config = ai.config
         
         st.write("### ⚖️ Điều chỉnh trọng số thuật toán")
         
@@ -910,33 +1055,33 @@ def main():
         with col1:
             freq_weight = st.slider(
                 "Thuật toán Tần suất",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('frequency_based', 0.25)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('frequency_based', 0.25)), 0.05
             )
             
             pos_weight = st.slider(
                 "Thuật toán Vị trí",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('position_based', 0.20)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('position_based', 0.20)), 0.05
             )
             
             trend_weight = st.slider(
                 "Thuật toán Xu hướng",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('trend_based', 0.20)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('trend_based', 0.20)), 0.05
             )
         
         with col2:
             pattern_weight = st.slider(
                 "Thuật toán Mẫu số",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('pattern_based', 0.15)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('pattern_based', 0.15)), 0.05
             )
             
             stat_weight = st.slider(
                 "Thuật toán Thống kê",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('statistical', 0.10)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('statistical', 0.10)), 0.05
             )
             
             neural_weight = st.slider(
                 "Thuật toán Neural",
-                0.0, 0.5, float(ai.config['algorithm_weights'].get('neural_inspired', 0.10)), 0.05
+                0.0, 0.5, float(current_config['algorithm_weights'].get('neural_inspired', 0.10)), 0.05
             )
         
         st.divider()
@@ -948,18 +1093,18 @@ def main():
         with col3:
             avoid_recent = st.slider(
                 "Tránh cặp trùng (kỳ)",
-                1, 10, ai.config.get('avoid_recent_pairs', 5), 1
+                1, 10, current_config.get('avoid_recent_pairs', 5), 1
             )
             
             min_confidence = st.slider(
                 "Độ tin cậy tối thiểu (%)",
-                40, 90, ai.config.get('min_confidence', 60), 5
+                40, 90, current_config.get('min_confidence', 60), 5
             )
         
         with col4:
             recent_weight = st.slider(
                 "Trọng số dữ liệu gần",
-                0.3, 0.9, ai.config.get('recent_weight', 0.6), 0.1
+                0.3, 0.9, current_config.get('recent_weight', 0.6), 0.1
             )
         
         if st.button("💾 Lưu cấu hình", type="primary", use_container_width=True):
@@ -980,9 +1125,7 @@ def main():
             
             # Save to file
             try:
-                with open(AI_CONFIG_FILE, 'w') as f:
-                    json.dump(ai.config, f, indent=2)
-                
+                ai.save_config()
                 st.success("✅ Đã lưu cấu hình thuật toán")
                 st.rerun()
             except Exception as e:
@@ -995,16 +1138,18 @@ def main():
         col5, col6 = st.columns(2)
         
         with col5:
-            if st.button("🗑️ Xóa dữ liệu lịch sử cặp số", use_container_width=True):
-                if os.path.exists(PAIR_HISTORY_FILE):
-                    os.remove(PAIR_HISTORY_FILE)
-                    ai.pair_frequency = Counter()
-                    ai.position_pairs = defaultdict(Counter)
-                    st.success("✅ Đã xóa lịch sử cặp số")
-                    st.rerun()
+            if st.button("🗑️ Xóa dữ liệu AI", use_container_width=True):
+                for file in [AI_CONFIG_FILE, PAIR_HISTORY_FILE]:
+                    if os.path.exists(file):
+                        try:
+                            os.remove(file)
+                        except:
+                            pass
+                st.success("✅ Đã xóa dữ liệu AI")
+                st.rerun()
         
         with col6:
-            if st.button("📥 Xuất dữ liệu phân tích", use_container_width=True):
+            if st.button("📥 Xuất dữ liệu", use_container_width=True):
                 df = load_data()
                 if not df.empty:
                     csv = df.to_csv(index=False)
@@ -1031,7 +1176,8 @@ def main():
         st.caption("🤖 6 Thuật toán AI kết hợp")
     
     with col3:
-        st.caption("NUMCORE AI ULTIMATE v9.1 – Tối ưu 2 số 5 tính")
+        st.caption("NUMCORE AI ULTIMATE v9.2 – Ổn định & Tin cậy")
 
+# ================= RUN APP =================
 if __name__ == "__main__":
     main()
