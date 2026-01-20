@@ -1,15 +1,17 @@
 import streamlit as st
 import pandas as pd
 from collections import Counter
-from datetime import datetime
 import os
-import re
 
-# ================= CONFIG =================
-st.set_page_config(page_title="NUMCORE AI v6.6", layout="centered")
+# ================== CONFIG ==================
+st.set_page_config(
+    page_title="NUMCORE AI v6.9 – 2 TINH",
+    layout="centered"
+)
+
 DATA_FILE = "data.csv"
 
-# ================= DATA =================
+# ================== LOAD DATA ==================
 def load_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
@@ -17,104 +19,94 @@ def load_data():
         return df
     return pd.DataFrame(columns=["time", "numbers"])
 
-def save_numbers(nums):
-    df = load_data()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    rows = [{"time": now, "numbers": n} for n in nums]
-    df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
+df = load_data()
 
-def clean_numbers(df):
-    return [
-        n for n in df["numbers"]
-        if isinstance(n, str) and n.isdigit() and len(n) == 5
-    ]
+# ================== UI ==================
+st.title("🎯 NUMCORE AI v6.9")
+st.caption("AI lọc rủi ro – Chuyên 2 tinh an toàn")
 
-# ================= AI CORE =================
-def ai_center_numbers(df):
-    valid = clean_numbers(df)
+tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
 
-    if len(valid) < 10:
-        return None
-
-    all_digits = []
-    recent_digits = []
-
-    for n in valid:
-        all_digits.extend(list(n))
-
-    for n in valid[-15:]:
-        recent_digits.extend(list(n))
-
-    freq_all = Counter(all_digits)
-    freq_recent = Counter(recent_digits)
-
-    score = {}
-    for d in "0123456789":
-        score[d] = freq_all.get(d, 0) * 0.4 + freq_recent.get(d, 0) * 0.6
-
-    # phá lặp 2 kỳ cuối
-    last_overlap = set(valid[-1]) & set(valid[-2])
-    for d in last_overlap:
-        score[d] *= 0.3
-
-    top = sorted(score, key=score.get, reverse=True)[:5]
-    return top
-
-def ai_strategy(center):
-    return Counter(center).most_common(1)[0][0]
-
-# ================= UI =================
-st.title("🧠 NUMCORE AI v6.6")
-st.caption("Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu")
-
-tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🎯 Phân tích & Dự đoán"])
-
-# ---------- TAB 1 ----------
+# ================== TAB 1 ==================
 with tab1:
-    st.subheader("Nhập nhiều kỳ (mỗi dòng 5 số)")
-    raw = st.text_area("Ví dụ:\n12345\n67890\n90876")
+    st.subheader("Nhập kết quả (5 số)")
+    nums = st.text_input("Ví dụ: 30945")
 
-    if st.button("💾 Lưu"):
-        lines = raw.splitlines()
-        valid = [l.strip() for l in lines if re.fullmatch(r"\d{5}", l.strip())]
-        if valid:
-            save_numbers(valid)
-            st.success(f"Đã lưu {len(valid)} kỳ")
+    if st.button("Lưu"):
+        if nums.isdigit() and len(nums) == 5:
+            df = pd.concat([
+                df,
+                pd.DataFrame([{
+                    "time": pd.Timestamp.now(),
+                    "numbers": nums
+                }])
+            ], ignore_index=True)
+            df.to_csv(DATA_FILE, index=False)
+            st.success("Đã lưu dữ liệu")
         else:
-            st.warning("Không có dữ liệu hợp lệ")
+            st.error("Sai định dạng – phải đúng 5 số")
 
-    df = load_data()
-    st.markdown(f"📊 **Tổng kỳ hợp lệ:** {len(clean_numbers(df))}")
-    st.dataframe(df.tail(20), use_container_width=True)
+    st.subheader("Dữ liệu gần nhất")
+    st.dataframe(df.tail(25), use_container_width=True)
 
-# ---------- TAB 2 ----------
+# ================== CORE AI ==================
+def split_digits(series):
+    digits = []
+    for x in series:
+        digits.extend(list(x))
+    return digits
+
+def score_numbers(df):
+    recent = df.tail(30)
+    digits = split_digits(recent["numbers"])
+    freq = Counter(digits)
+    total = sum(freq.values())
+
+    scores = {}
+    for d in map(str, range(10)):
+        f = freq.get(d, 0) / total if total else 0
+        penalty = 0.18 if f > 0.23 else 0  # tránh số quá nóng
+        scores[d] = f - penalty
+    return scores
+
+def pick_safe_numbers(scores):
+    return sorted(scores, key=scores.get, reverse=True)[:5]
+
+def pair_ai(df, safe_nums):
+    recent = df.tail(40)
+    pairs = {}
+
+    for i in range(len(safe_nums)):
+        for j in range(i + 1, len(safe_nums)):
+            a, b = safe_nums[i], safe_nums[j]
+            count = 0
+            for n in recent["numbers"]:
+                if a in n and b in n:
+                    count += 1
+            pairs[a + b] = 1 / (count + 1)
+
+    return sorted(pairs, key=pairs.get, reverse=True)
+
+# ================== TAB 2 ==================
 with tab2:
-    df = load_data()
-    valid = clean_numbers(df)
-
-    if len(valid) < 10:
-        st.warning("Chưa đủ dữ liệu sạch để AI phân tích")
+    if len(df) < 15:
+        st.warning("Cần tối thiểu 15 kỳ dữ liệu")
     else:
-        center = ai_center_numbers(df)
+        scores = score_numbers(df)
+        safe_nums = pick_safe_numbers(scores)
+        best_pairs = pair_ai(df, safe_nums)
 
         st.subheader("🎯 SỐ TRUNG TÂM (AI)")
-        c1, c2 = st.columns(2)
-        c1.metric("Tổ hợp A", "".join(center[:3]))
-        c2.metric("Tổ hợp B", "".join(center[2:]))
+        st.metric("Tổ hợp A", best_pairs[0])
+        st.metric("Tổ hợp B", best_pairs[1])
 
-        st.divider()
+        st.subheader("🧠 SỐ CHIẾN LƯỢC (ĐÁNH)")
+        st.success(f"{best_pairs[0]}  –  {best_pairs[1]}")
 
-        st.subheader("🧠 SỐ CHIẾN LƯỢC")
-        st.metric("AI chọn lọc", ai_strategy(center))
+        st.subheader("📊 Thống kê nhanh")
+        stat = Counter(split_digits(df["numbers"]))
+        stat_df = pd.DataFrame(stat.items(), columns=["Số", "Tần suất"])
+        st.dataframe(stat_df.sort_values("Tần suất", ascending=False),
+                     use_container_width=True)
 
-        st.divider()
-
-        st.subheader("📈 Thống kê nhanh")
-        freq = Counter("".join(valid))
-        stat = pd.DataFrame(freq.items(), columns=["Số", "Tần suất"]).sort_values(
-            "Tần suất", ascending=False
-        )
-        st.dataframe(stat, use_container_width=True)
-
-st.caption("⚠ Công cụ phân tích xác suất – không cam kết trúng")
+st.caption("⚠️ AI hỗ trợ xác suất – không gấp thếp – không all-in")
