@@ -4,126 +4,148 @@ from collections import Counter
 from datetime import datetime
 import os
 
-st.set_page_config(page_title="NUMCORE AI v6.6 – 2 TÍNH", layout="centered")
+# ================== CONFIG ==================
+st.set_page_config(
+    page_title="NUMCORE AI v6.6 – 2 TÍNH",
+    layout="centered"
+)
 
 DATA_FILE = "data.csv"
 
-# ================= DATA =================
+# ================== INIT ==================
+if "data" not in st.session_state:
+    st.session_state.data = pd.DataFrame(columns=["time", "numbers"])
+
+# ================== UTILS ==================
+def save_data():
+    st.session_state.data.to_csv(DATA_FILE, index=False)
+
 def load_data():
     if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE)
-        df["numbers"] = df["numbers"].astype(str)
-        df = df[df["numbers"].str.match(r"^\d{5}$", na=False)]
-        return df
+        return pd.read_csv(DATA_FILE)
     return pd.DataFrame(columns=["time", "numbers"])
 
-def save_data(rows):
-    df = load_data()
-    df = pd.concat([df, rows], ignore_index=True)
-    df.to_csv(DATA_FILE, index=False)
+def clean_number(n):
+    n = str(n)
+    return "".join([c for c in n if c.isdigit()])
 
-# ================= ANALYSIS =================
-def split_digits(data):
+def split_digits(series):
     digits = []
-    for n in data:
-        if isinstance(n, str) and len(n) == 5 and n.isdigit():
+    for n in series:
+        n = clean_number(n)
+        if len(n) >= 5:
             digits.extend(list(n))
     return digits
 
-def analyze(data):
-    digits = split_digits(data)
-    if len(digits) < 50:
+# ================== AI CORE ==================
+def analyze(df):
+    digits = split_digits(df["numbers"])
+
+    if len(digits) < 20:
         return None
 
     freq = Counter(digits)
 
-    max_f = max(freq.values())
-    hot = [d for d, c in freq.items() if c >= max_f * 0.75]
-    cold = [d for d in "0123456789" if d not in freq]
+    # Trung tâm A – B
+    top = freq.most_common(3)
+    A = top[0][0]
+    B = top[1][0]
 
-    last_seen = {}
-    for i, n in enumerate(reversed(data)):
-        for d in n:
-            if d not in last_seen:
-                last_seen[d] = i + 1
+    # Độ lệch
+    diff = abs(freq[A] - freq[B])
 
-    bias = [d for d, v in last_seen.items() if v <= 3]
-
-    core = list(set(hot) & set(bias))
-    core = core[:2]
-
-    confidence = len(core)
+    # Chiến lược
+    if diff <= 2:
+        strategy = "ĐÁNH NHẸ – 2 số"
+        risk = "THẤP"
+        bet = f"{A}{B} – {B}{A}"
+    elif diff <= 5:
+        strategy = "ĐÁNH THĂM DÒ"
+        risk = "TRUNG BÌNH"
+        bet = f"{A}{B}"
+    else:
+        strategy = "CHỈ QUAN SÁT"
+        risk = "CAO"
+        bet = "KHÔNG NÊN VÀO"
 
     return {
-        "freq": freq,
-        "hot": hot,
-        "cold": cold,
-        "bias": bias,
-        "core": core,
-        "confidence": confidence
+        "A": A,
+        "B": B,
+        "bet": bet,
+        "strategy": strategy,
+        "risk": risk,
+        "freq": freq
     }
 
-# ================= UI =================
-st.title("NUMCORE AI v6.6 – 2 TÍNH")
-st.caption("Ưu tiên an toàn – Không ảo – Không gỡ")
+# ================== LOAD DATA ==================
+st.session_state.data = load_data()
 
-tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
+# ================== UI ==================
+st.title("🎯 NUMCORE AI v6.6 – 2 TÍNH")
+st.caption("Ưu tiên an toàn – Không ảo – Không gỡ liều")
 
-with tab1:
+tabs = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
+
+# ================== TAB 1 ==================
+with tabs[0]:
     st.subheader("Nhập kết quả (5 số)")
-    raw = st.text_area("Nhập nhiều kỳ – mỗi dòng 1 kết quả", height=160)
+    num = st.text_input("Ví dụ: 30945")
 
-    if st.button("Lưu dữ liệu"):
-        rows = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if line.isdigit() and len(line) == 5:
-                rows.append({
-                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "numbers": line
-                })
-
-        if rows:
-            save_data(pd.DataFrame(rows))
-            st.success(f"Đã lưu {len(rows)} kỳ hợp lệ")
+    if st.button("Lưu"):
+        num = clean_number(num)
+        if len(num) == 5:
+            new_row = {
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "numbers": num
+            }
+            st.session_state.data = pd.concat(
+                [st.session_state.data, pd.DataFrame([new_row])],
+                ignore_index=True
+            )
+            save_data()
+            st.success("Đã lưu dữ liệu")
         else:
-            st.error("Không có dòng nào đúng chuẩn 5 số")
+            st.error("Phải nhập đúng 5 số")
 
-    df = load_data()
-    st.subheader("Dữ liệu gần nhất")
-    st.dataframe(df.tail(30), use_container_width=True)
+    st.divider()
+    st.subheader("Dữ liệu đã nhập")
+    st.dataframe(st.session_state.data.tail(20), use_container_width=True)
 
-with tab2:
-    df = load_data()
+# ================== TAB 2 ==================
+with tabs[1]:
+    st.subheader("🎯 SỐ TRUNG TÂM (AI)")
 
-    if len(df) < 30:
-        st.error("⚠️ Dữ liệu quá ít – KHÔNG ĐÁNH")
+    result = analyze(st.session_state.data)
+
+    if result is None:
+        st.warning("Chưa đủ dữ liệu để phân tích (tối thiểu ~20 chữ số)")
     else:
-        result = analyze(df["numbers"].tolist())
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Tổ hợp A", result["A"])
+        with col2:
+            st.metric("Tổ hợp B", result["B"])
 
-        if result is None:
-            st.error("⚠️ Cầu nhiễu – KHÔNG ĐÁNH")
+        st.divider()
+        st.subheader("🧠 SỐ CHIẾN LƯỢC")
+
+        if result["risk"] == "CAO":
+            st.error("🚫 KHÔNG NÊN VÀO – Cầu xấu")
+        elif result["risk"] == "TRUNG BÌNH":
+            st.warning("⚠️ ĐÁNH THĂM DÒ – Tiền nhỏ")
         else:
-            st.subheader("🎯 SỐ TRUNG TÂM (AI)")
-            if result["core"]:
-                if len(result["core"]) >= 1:
-                    st.metric("Tổ hợp A", result["core"][0])
-                if len(result["core"]) >= 2:
-                    st.metric("Tổ hợp B", result["core"][1])
-            else:
-                st.warning("Không có số trung tâm đủ tin cậy")
+            st.success("✅ ĐÁNH ĐƯỢC – Ưu tiên an toàn")
 
-            st.subheader("🧠 SỐ CHIẾN LƯỢC")
-            if result["confidence"] >= 2:
-                st.success("Chỉ nên quan sát – không all-in")
-                st.write("Nhóm số ưu tiên:", result["core"])
-            else:
-                st.error("KHÔNG ĐÁNH – cầu yếu")
+        st.markdown(f"""
+**Chiến lược:** {result["strategy"]}  
+**Số đề xuất:** `{result["bet"]}`  
+**Mức rủi ro:** **{result["risk"]}**
+""")
 
-            st.subheader("📊 Thống kê nhanh")
-            freq_df = pd.DataFrame(
-                result["freq"].items(), columns=["Số", "Tần suất"]
-            ).sort_values("Tần suất", ascending=False)
-            st.dataframe(freq_df, use_container_width=True)
-
-st.caption("⚠️ Tool phân tích xác suất – KHÔNG cam kết lợi nhuận.")
+        st.divider()
+        st.subheader("📊 Thống kê nhanh")
+        freq_df = pd.DataFrame(
+            result["freq"].most_common(),
+            columns=["Số", "Tần suất"]
+        )
+        st.dataframe(freq_df, use_container_width=True)
