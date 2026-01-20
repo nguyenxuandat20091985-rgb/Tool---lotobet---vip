@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 from collections import Counter
-from itertools import combinations
 from datetime import datetime
 import os
 
 # ================= CONFIG =================
-st.set_page_config(page_title="NUMCORE v6.6", layout="centered")
+st.set_page_config(page_title="NUMCORE v6.7", layout="centered")
 DATA_FILE = "data.csv"
 
 # ================= DATA =================
@@ -20,106 +19,82 @@ def load_data():
 def save_many(values):
     df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    rows = []
-
-    for v in values:
-        if v.isdigit() and len(v) == 5:
-            rows.append({"time": now, "numbers": v})
-
+    rows = [{"time": now, "numbers": v} for v in values if v.isdigit() and len(v) == 5]
     if rows:
         df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
         df.to_csv(DATA_FILE, index=False)
-
     return len(rows)
 
 # ================= CORE =================
-def parse_numbers(v):
-    return [int(x) for x in v if x.isdigit()]
+def parse(v):
+    return [int(x) for x in v]
 
-def flatten(df):
-    out = []
-    for v in df["numbers"]:
-        out.extend(parse_numbers(v))
-    return out
+def score_numbers(df):
+    all_nums = []
+    last_seen = {}
+    for idx, row in df.iterrows():
+        nums = parse(row["numbers"])
+        for n in nums:
+            all_nums.append(n)
+            last_seen[n] = idx
 
-def recent_freq(df, window=20):
-    return Counter(flatten(df.tail(window)))
+    freq = Counter(all_nums)
+    total = len(df)
 
-def ai_score(freq_all, freq_recent, total_rounds):
     scores = {}
     for n in range(10):
-        fa = freq_all.get(n, 0)
-        fr = freq_recent.get(n, 0)
+        f = freq.get(n, 0)
+        if f == 0:
+            continue
+        cold = total - last_seen.get(n, total)
+        score = (f * 1.2) + (cold * 0.8)
+        if f > total * 0.25:
+            score *= 0.6  # phạt số quá nóng
+        scores[n] = round(score, 2)
 
-        if fr == 0:
-            continue  # số chết → loại
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-        score = (
-            fr * 3 +                 # đang lên
-            fa * 0.5 -               # không quá nóng
-            abs(fa - total_rounds*0.5) * 0.05
-        )
-
-        scores[n] = score
-    return scores
+def ai_safe_mode(top_scores):
+    if len(top_scores) < 3:
+        return "⛔ NGHỈ – DỮ LIỆU YẾU", "red"
+    spread = top_scores[0][1] - top_scores[2][1]
+    if spread > 5:
+        return "✅ NÊN ĐÁNH (CẦU ĐẸP)", "green"
+    if spread > 2:
+        return "⚠️ ĐÁNH NHẸ", "orange"
+    return "⛔ NGHỈ – CẦU XẤU", "red"
 
 # ================= UI =================
-st.title("🔷 NUMCORE AI v6.6")
-st.caption("AI lọc cầu – Ưu tiên sống – Không all-in")
+st.title("🔷 NUMCORE v6.7 – SAFE MODE")
+st.caption("AI lọc số – Ưu tiên sống – Không all-in")
 
-tab1, tab2 = st.tabs(["📥 Dữ liệu", "🎯 Phân tích"])
+tab1, tab2 = st.tabs(["📥 Dữ liệu", "🎯 AI Dự đoán"])
 
-# ===== TAB 1 =====
 with tab1:
-    raw = st.text_area("Mỗi dòng = 1 kỳ (5 số)", height=150)
-
-    if st.button("💾 Lưu dữ liệu"):
-        saved = save_many([x.strip() for x in raw.splitlines()])
-        if saved > 0:
-            st.success(f"Đã lưu {saved} kỳ")
-        else:
-            st.error("Không có dữ liệu hợp lệ")
-
+    raw = st.text_area("Mỗi dòng 1 kỳ (5 số)")
+    if st.button("💾 Lưu"):
+        s = save_many(raw.splitlines())
+        st.success(f"Đã lưu {s} kỳ") if s else st.error("Không hợp lệ")
     df = load_data()
     if not df.empty:
         st.dataframe(df.tail(10), use_container_width=True)
 
-# ===== TAB 2 =====
 with tab2:
     df = load_data()
-
     if len(df) < 10:
-        st.warning("Chưa đủ dữ liệu để AI hoạt động")
+        st.warning("Chưa đủ dữ liệu")
     else:
-        all_nums = flatten(df)
-        freq_all = Counter(all_nums)
-        freq_recent = recent_freq(df)
-
-        scores = ai_score(freq_all, freq_recent, len(df))
-        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-
-        picks = [str(n) for n, _ in ranked[:5]]
-
-        st.subheader("🎯 SỐ TRUNG TÂM")
-        top = [n for n, _ in freq_all.most_common(6)]
-        groups = list(combinations(top, 3))[:2]
-
-        c1, c2 = st.columns(2)
-        if len(groups) > 0:
-            c1.metric("Trung tâm A", "".join(map(str, groups[0])))
-        if len(groups) > 1:
-            c2.metric("Trung tâm B", "".join(map(str, groups[1])))
-
-        st.divider()
+        ranked = score_numbers(df)
+        top5 = ranked[:5]
 
         st.subheader("🧠 5 SỐ CHIẾN LƯỢC (AI)")
-        if len(picks) < 2:
-            st.error("🔴 Cầu xấu – AI khuyên nghỉ")
-        else:
-            st.success(" • ".join(picks))
-            st.info("👉 Đánh nhỏ – xoay vòng – KHÔNG all-in")
+        st.write("👉 **Ưu tiên đánh 3 số đầu**")
+        for i, (n, s) in enumerate(top5, 1):
+            st.write(f"{i}. **{n}** — điểm AI: `{s}`")
 
+        status, color = ai_safe_mode(top5)
         st.divider()
-        st.write(f"📊 Kỳ đã phân tích: **{len(df)}**")
+        st.subheader("🚦 TRẠNG THÁI AI")
+        st.markdown(f"<h3 style='color:{color}'>{status}</h3>", unsafe_allow_html=True)
 
-st.caption("NUMCORE v6.6 – AI lọc cầu – Ổn định – Không ảo")
+st.caption("NUMCORE v6.7 – SAFE MODE – Không ảo – Không gấp thếp")
