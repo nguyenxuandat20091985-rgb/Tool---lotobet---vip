@@ -5,7 +5,6 @@ from collections import Counter, defaultdict
 from itertools import combinations
 from datetime import datetime, timedelta
 import os
-import random
 import json
 from pathlib import Path
 import warnings
@@ -13,44 +12,30 @@ warnings.filterwarnings('ignore')
 
 # ================= CONFIG =================
 st.set_page_config(
-    page_title="NUMCORE AI MASTER - 2 SỐ 5 TÍNH",
+    page_title="AI 2 TINH LOTOBET - BẢN CHUẨN v2",
     layout="wide",
     page_icon="🎯"
 )
 
-DATA_FILE = "numcore_data.csv"
-AI_CONFIG_FILE = "ai_config.json"
-PAIR_HISTORY_FILE = "pair_history.json"
+DATA_FILE = "lotobet_data.csv"
+AI_CONFIG_FILE = "ai_config_lotobet.json"
 
-# ================= ENHANCED AI FOR 2-NUMBER PAIRS =================
-class EnhancedTwoNumberAI:
+# ================= ENHANCED AI FOR LOTOBET 2-TINH =================
+class LotobetTwoNumberAI:
     def __init__(self):
-        self.pattern_memory = defaultdict(list)
-        self.history_window = 30
-        self.pair_frequency = Counter()
-        self.position_pairs = defaultdict(Counter)
-        self.consecutive_pairs = Counter()
-        self.repeated_numbers = Counter()
+        self.number_history = []
         self.load_config()
-        self.load_pair_history()
     
     def load_config(self):
-        """Load AI configuration with error handling"""
+        """Load AI configuration"""
         default_config = {
-            "algorithm_weights": {
-                "frequency_based": 0.20,
-                "gap_analysis": 0.18,
-                "hot_cold_mix": 0.18,
-                "pattern_based": 0.15,
-                "position_based": 0.15,
-                "trend_based": 0.14
-            },
-            "recent_weight": 0.65,
-            "avoid_recent_pairs": 5,
-            "min_confidence": 65,
-            "avoid_same_digits": True,
-            "max_consecutive_gap": 3,
-            "prefer_complementary": True
+            "min_draws": 15,
+            "max_confidence": 95,
+            "min_confidence": 60,
+            "avoid_recent_appearance": 2,
+            "prefer_gap_period": 5,
+            "max_hot_duration": 3,
+            "cold_threshold": 7
         }
         
         try:
@@ -62,7 +47,6 @@ class EnhancedTwoNumberAI:
                 self.config = default_config
         except:
             self.config = default_config
-            self.save_config()
     
     def save_config(self):
         """Save AI configuration"""
@@ -72,663 +56,349 @@ class EnhancedTwoNumberAI:
         except:
             pass
     
-    def load_pair_history(self):
-        """Load historical pair data with error handling"""
-        try:
-            if os.path.exists(PAIR_HISTORY_FILE):
-                with open(PAIR_HISTORY_FILE, 'r') as f:
-                    data = json.load(f)
-                    
-                    self.pair_frequency = Counter(data.get('pair_frequency', {}))
-                    self.consecutive_pairs = Counter(data.get('consecutive_pairs', {}))
-                    self.repeated_numbers = Counter(data.get('repeated_numbers', {}))
-                    
-                    pos_pairs_data = data.get('position_pairs', {})
-                    self.position_pairs = defaultdict(Counter)
-                    for key_str, counter_data in pos_pairs_data.items():
-                        try:
-                            key = eval(key_str)
-                            self.position_pairs[key] = Counter(counter_data)
-                        except:
-                            continue
-            else:
-                self.reset_statistics()
-        except:
-            self.reset_statistics()
-    
-    def save_pair_history(self):
-        """Save pair history data with safe serialization"""
-        try:
-            data = {
-                'pair_frequency': dict(self.pair_frequency),
-                'consecutive_pairs': dict(self.consecutive_pairs),
-                'repeated_numbers': dict(self.repeated_numbers),
-                'position_pairs': {str(k): dict(v) for k, v in self.position_pairs.items()}
-            }
-            
-            with open(PAIR_HISTORY_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
-        except:
-            pass
-    
-    def reset_statistics(self):
-        """Reset all statistics"""
-        self.pair_frequency = Counter()
-        self.consecutive_pairs = Counter()
-        self.repeated_numbers = Counter()
-        self.position_pairs = defaultdict(Counter)
-    
-    def extract_pairs_from_history(self, numbers_history):
-        """Extract all valid 2-number pairs from history (excluding same digits)"""
-        all_pairs = []
-        
-        for numbers in numbers_history:
-            if len(numbers) == 5:
-                unique_numbers = set(numbers)
-                
-                has_repeated = any(numbers.count(num) > 1 for num in unique_numbers)
-                if has_repeated:
-                    valid_numbers = [num for num in unique_numbers]
-                    for pair in combinations(sorted(valid_numbers), 2):
-                        if pair[0] != pair[1]:
-                            all_pairs.append(pair)
-                else:
-                    for pair in combinations(sorted(unique_numbers), 2):
-                        if pair[0] != pair[1]:
-                            all_pairs.append(pair)
-        
-        return all_pairs
-    
-    def analyze_number_patterns(self, numbers_history):
-        """Analyze patterns in numbers including consecutive numbers and repeats"""
-        if not numbers_history:
+    def analyze_single_numbers(self, numbers_history):
+        """Phân tích từng số đơn (0-9) theo đặc tả"""
+        if len(numbers_history) < 5:
             return {}
         
-        patterns = {
-            'consecutive_pairs': Counter(),
-            'digit_gaps': [],
-            'repeated_numbers': Counter(),
-            'position_analysis': {i: Counter() for i in range(5)}
-        }
-        
-        for numbers in numbers_history[-20:]:
-            if len(numbers) == 5:
-                for i in range(4):
-                    if abs(numbers[i] - numbers[i+1]) == 1:
-                        pair = tuple(sorted([numbers[i], numbers[i+1]]))
-                        patterns['consecutive_pairs'][pair] += 1
-                
-                num_counter = Counter(numbers)
-                for num, count in num_counter.items():
-                    if count > 1:
-                        patterns['repeated_numbers'][num] += 1
-                
-                for pos, num in enumerate(numbers):
-                    patterns['position_analysis'][pos][num] += 1
-        
-        return patterns
-    
-    def update_pair_statistics(self, numbers_history):
-        """Update pair frequency statistics"""
-        if len(numbers_history) == 0:
-            return
-        
-        recent_history = numbers_history[-15:] if len(numbers_history) >= 15 else numbers_history
-        
-        new_pairs = self.extract_pairs_from_history(recent_history)
-        for pair in new_pairs:
-            self.pair_frequency[pair] += 1
-        
-        patterns = self.analyze_number_patterns(recent_history)
-        self.consecutive_pairs.update(patterns['consecutive_pairs'])
-        self.repeated_numbers.update(patterns['repeated_numbers'])
-        
-        for numbers in recent_history:
-            if len(numbers) == 5:
-                for i in range(5):
-                    for j in range(i+1, 5):
-                        pos_pair = (i, j, numbers[i], numbers[j])
-                        key = (numbers[i], numbers[j])
-                        self.position_pairs[key][pos_pair] += 1
-        
-        self.save_pair_history()
-    
-    # ============= ENHANCED ALGORITHMS =============
-    
-    def algorithm_frequency_based(self, numbers_history, hot_numbers):
-        """Algorithm 1: Enhanced frequency-based prediction"""
-        if len(numbers_history) < 10:
-            return []
-        
-        all_pairs = self.extract_pairs_from_history(numbers_history)
-        if not all_pairs:
-            return []
-        
-        pair_counter = Counter(all_pairs)
-        frequent_pairs = pair_counter.most_common(20)
-        
-        pair_scores = {}
-        recent_pairs = self.extract_pairs_from_history(numbers_history[-5:])
-        
-        for pair, freq in frequent_pairs:
-            score = freq * 0.4
-            
-            recent_count = recent_pairs.count(pair)
-            score *= (1 + recent_count * 0.3)
-            
-            hot_bonus = 0
-            for num in pair:
-                if num in hot_numbers[:3]:
-                    hot_bonus += 0.2
-                elif num in hot_numbers:
-                    hot_bonus += 0.1
-            score *= (1 + hot_bonus)
-            
-            if abs(pair[0] - pair[1]) == 1:
-                score *= 0.8
-            
-            if abs(pair[0] - pair[1]) > 5:
-                score *= 0.7
-            
-            pair_scores[pair] = score
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def algorithm_gap_analysis(self, numbers_history):
-        """Algorithm 2: Gap analysis between numbers"""
-        if len(numbers_history) < 15:
-            return []
-        
-        gap_distribution = Counter()
-        successful_pairs = []
-        
-        for numbers in numbers_history[-15:]:
-            if len(numbers) == 5:
-                unique_numbers = sorted(set(numbers))
-                for i in range(len(unique_numbers)):
-                    for j in range(i+1, len(unique_numbers)):
-                        gap = abs(unique_numbers[i] - unique_numbers[j])
-                        gap_distribution[gap] += 1
-                        successful_pairs.append((unique_numbers[i], unique_numbers[j]))
-        
-        optimal_gaps = []
-        for gap, count in gap_distribution.most_common(5):
-            if 1 <= gap <= 4:
-                optimal_gaps.append(gap)
-        
-        pair_scores = {}
-        for num1 in range(10):
-            for num2 in range(num1+1, 10):
-                gap = abs(num1 - num2)
-                if gap in optimal_gaps:
-                    score = gap_distribution.get(gap, 1) * 0.3
-                    
-                    pair = (num1, num2)
-                    if pair in successful_pairs:
-                        score *= 1.5
-                    
-                    if gap == 1:
-                        score *= 0.6
-                    
-                    pair_scores[pair] = score
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def algorithm_hot_cold_mix(self, numbers_history, hot_numbers, cold_numbers):
-        """Algorithm 3: Mix hot and cold numbers"""
-        if len(numbers_history) < 12:
-            return []
-        
-        pair_scores = {}
-        
-        for hot_num in hot_numbers[:3]:
-            for cold_num in cold_numbers[:3]:
-                if hot_num == cold_num:
-                    continue
-                
-                pair = tuple(sorted([hot_num, cold_num]))
-                
-                together_count = sum(1 for nums in numbers_history[-10:] 
-                                   if hot_num in nums and cold_num in nums)
-                
-                score = 0.5
-                
-                if together_count > 0:
-                    score *= (1 + together_count * 0.2)
-                else:
-                    score *= 1.3
-                
-                gap = abs(hot_num - cold_num)
-                if 2 <= gap <= 4:
-                    score *= 1.2
-                elif gap == 1:
-                    score *= 0.7
-                
-                pair_scores[pair] = score
-        
-        for i in range(len(cold_numbers[:3])):
-            for j in range(i+1, len(cold_numbers[:3])):
-                cold1, cold2 = cold_numbers[i], cold_numbers[j]
-                pair = tuple(sorted([cold1, cold2]))
-                
-                score = 0.4
-                
-                last_appearance1 = self.get_last_appearance(cold1, numbers_history)
-                last_appearance2 = self.get_last_appearance(cold2, numbers_history)
-                
-                if last_appearance1 > 5 or last_appearance2 > 5:
-                    score *= 1.4
-                
-                pair_scores[pair] = score
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def get_last_appearance(self, number, numbers_history):
-        """Get how many draws since last appearance"""
-        for i, numbers in enumerate(reversed(numbers_history)):
-            if number in numbers:
-                return i
-        return len(numbers_history)
-    
-    def algorithm_pattern_based_enhanced(self, numbers_history):
-        """Algorithm 4: Enhanced pattern recognition"""
-        if len(numbers_history) < 20:
-            return []
-        
-        patterns = self.analyze_number_patterns(numbers_history)
-        
-        pair_scores = {}
-        
-        for pair, count in patterns['consecutive_pairs'].items():
-            if count >= 2:
-                score = count * 0.4
-                score *= 0.7
-                pair_scores[pair] = score
-        
-        sum_distribution = Counter()
-        for numbers in numbers_history[-15:]:
-            if len(numbers) == 5:
-                unique_numbers = sorted(set(numbers))
-                for i in range(len(unique_numbers)):
-                    for j in range(i+1, len(unique_numbers)):
-                        pair_sum = unique_numbers[i] + unique_numbers[j]
-                        sum_distribution[pair_sum] += 1
-        
-        optimal_sums = [sum_val for sum_val, count in sum_distribution.most_common(3)]
-        
-        for num1 in range(10):
-            for num2 in range(num1+1, 10):
-                pair = (num1, num2)
-                pair_sum = num1 + num2
-                
-                if pair_sum in optimal_sums:
-                    if pair not in pair_scores:
-                        pair_scores[pair] = 0
-                    pair_scores[pair] += sum_distribution.get(pair_sum, 1) * 0.3
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def algorithm_position_based_enhanced(self, numbers_history):
-        """Algorithm 5: Enhanced position-based prediction"""
-        if len(numbers_history) < 15:
-            return []
-        
-        position_stats = {i: Counter() for i in range(5)}
-        
-        for numbers in numbers_history[-15:]:
-            if len(numbers) == 5:
-                for pos, num in enumerate(numbers):
-                    position_stats[pos][num] += 1
-        
-        position_combinations = defaultdict(Counter)
-        
-        for numbers in numbers_history[-10:]:
-            if len(numbers) == 5:
-                for i in range(5):
-                    for j in range(i+1, 5):
-                        key = (i, j)
-                        pair = tuple(sorted([numbers[i], numbers[j]]))
-                        position_combinations[key][pair] += 1
-        
-        pair_scores = {}
-        
-        for (pos1, pos2), pair_counter in position_combinations.items():
-            for pair, count in pair_counter.most_common(5):
-                if count >= 2:
-                    total_pos1 = max(1, sum(position_stats[pos1].values()))
-                    total_pos2 = max(1, sum(position_stats[pos2].values()))
-                    
-                    pos1_strength = position_stats[pos1][pair[0]] / total_pos1
-                    pos2_strength = position_stats[pos2][pair[1]] / total_pos2
-                    
-                    score = count * (pos1_strength + pos2_strength) * 0.4
-                    
-                    if pair not in pair_scores or score > pair_scores[pair]:
-                        pair_scores[pair] = score
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def algorithm_trend_based_enhanced(self, numbers_history):
-        """Algorithm 6: Enhanced trend analysis"""
-        if len(numbers_history) < 20:
-            return []
-        
-        momentum_scores = {}
+        analysis = {}
         
         for num in range(10):
-            recent = numbers_history[-5:] if len(numbers_history) >= 10 else numbers_history[-len(numbers_history)//2:]
-            older = numbers_history[-10:-5] if len(numbers_history) >= 10 else numbers_history[:len(numbers_history)//2]
-            
-            recent_count = sum(1 for nums in recent for n in nums if n == num)
-            older_count = sum(1 for nums in older for n in nums if n == num)
-            
-            total = recent_count + older_count
-            if total > 0:
-                momentum = (recent_count - older_count) / total
-                momentum_scores[num] = momentum
-        
-        pair_scores = {}
-        
-        for num1 in range(10):
-            for num2 in range(num1+1, 10):
-                if num1 in momentum_scores and num2 in momentum_scores:
-                    momentum_diff = abs(momentum_scores[num1] - momentum_scores[num2])
-                    
-                    both_rising = momentum_scores[num1] > 0.3 and momentum_scores[num2] > 0.3
-                    
-                    if momentum_diff > 0.4 or both_rising:
-                        score = momentum_diff * 0.5 if not both_rising else 0.6
-                        
-                        recent_together = sum(1 for nums in numbers_history[-8:] 
-                                           if num1 in nums and num2 in nums)
-                        
-                        if recent_together > 0:
-                            score *= (1 + recent_together * 0.2)
-                        
-                        pair_scores[(num1, num2)] = score
-        
-        if pair_scores:
-            return sorted(pair_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        return []
-    
-    def combine_algorithms(self, numbers_history, hot_numbers, cold_numbers):
-        """Combine results from all enhanced algorithms"""
-        if len(numbers_history) < 10:
-            return []
-        
-        algo_results = {}
-        
-        try:
-            algo_results['frequency'] = self.algorithm_frequency_based(numbers_history, hot_numbers)
-        except:
-            algo_results['frequency'] = []
-        
-        try:
-            algo_results['gap'] = self.algorithm_gap_analysis(numbers_history)
-        except:
-            algo_results['gap'] = []
-        
-        try:
-            algo_results['hot_cold'] = self.algorithm_hot_cold_mix(numbers_history, hot_numbers, cold_numbers)
-        except:
-            algo_results['hot_cold'] = []
-        
-        try:
-            algo_results['pattern'] = self.algorithm_pattern_based_enhanced(numbers_history)
-        except:
-            algo_results['pattern'] = []
-        
-        try:
-            algo_results['position'] = self.algorithm_position_based_enhanced(numbers_history)
-        except:
-            algo_results['position'] = []
-        
-        try:
-            algo_results['trend'] = self.algorithm_trend_based_enhanced(numbers_history)
-        except:
-            algo_results['trend'] = []
-        
-        combined_scores = defaultdict(float)
-        algo_weights = self.config['algorithm_weights']
-        
-        for algo_name, results in algo_results.items():
-            weight = algo_weights.get(algo_name, 0.1)
-            
-            if results:
-                for i, (pair, score) in enumerate(results):
-                    rank_score = (len(results) - i) / len(results)
-                    combined_score = score * rank_score * weight
-                    combined_scores[pair] += combined_score
-        
-        filtered_scores = {}
-        for pair, score in combined_scores.items():
-            filtered_score = score
-            
-            if self.config.get('avoid_same_digits', True) and pair[0] == pair[1]:
-                continue
-            
-            if abs(pair[0] - pair[1]) == 1:
-                filtered_score *= 0.6
-            
-            if abs(pair[0] - pair[1]) > self.config.get('max_consecutive_gap', 3):
-                filtered_score *= 0.8
-            
-            if pair[0] in self.repeated_numbers or pair[1] in self.repeated_numbers:
-                repeated_penalty = min(0.9, 1.0 - (self.repeated_numbers.get(pair[0], 0) + 
-                                                   self.repeated_numbers.get(pair[1], 0)) * 0.1)
-                filtered_score *= repeated_penalty
-            
-            filtered_scores[pair] = filtered_score
-        
-        try:
-            recent_pairs = self.extract_pairs_from_history(numbers_history[-self.config['avoid_recent_pairs']:])
-            for pair in recent_pairs:
-                if pair in filtered_scores:
-                    filtered_scores[pair] *= 0.7
-        except:
-            pass
-        
-        if filtered_scores:
-            sorted_pairs = sorted(filtered_scores.items(), key=lambda x: x[1], reverse=True)
-            return sorted_pairs
-        return []
-    
-    def predict_top_pairs(self, numbers_history, hot_numbers, cold_numbers, num_pairs=8):
-        """Predict top N pairs with highest probability"""
-        if len(numbers_history) < 10:
-            return [], {}
-        
-        try:
-            self.update_pair_statistics(numbers_history)
-        except:
-            pass
-        
-        all_predictions = self.combine_algorithms(numbers_history, hot_numbers, cold_numbers)
-        
-        if not all_predictions:
-            return [], {}
-        
-        predictions = []
-        confidence_details = {}
-        
-        for i, (pair, score) in enumerate(all_predictions[:num_pairs]):
-            predictions.append(pair)
-            
-            max_score = all_predictions[0][1] if all_predictions else 1
-            normalized_score = score / max_score if max_score > 0 else 0
-            
-            data_factor = min(1.0, len(numbers_history) / 30)
-            score_factor = normalized_score
-            pattern_factor = self.calculate_pattern_strength(pair, numbers_history)
-            
-            base_confidence = 50 + (score_factor * 30) + (data_factor * 10) + (pattern_factor * 10)
-            confidence = min(95, base_confidence)
-            
-            gap = abs(pair[0] - pair[1])
-            if gap == 1:
-                confidence *= 0.8
-            elif 2 <= gap <= 4:
-                confidence *= 1.1
-            
-            confidence_details[pair] = {
-                'confidence': int(confidence),
-                'score': round(score, 3),
-                'gap': gap,
-                'recent_appearances': self.count_recent_appearances(pair, numbers_history),
-                'historical_frequency': self.pair_frequency.get(pair, 0),
-                'is_consecutive': gap == 1,
-                'is_optimal_gap': 2 <= gap <= 4
+            stats = {
+                'appearances': [],
+                'gaps': [],
+                'states': [],
+                'recent_periods': defaultdict(int),
+                'current_state': 'UNKNOWN'
             }
+            
+            # Lịch sử xuất hiện
+            for i, draw in enumerate(numbers_history):
+                if num in draw:
+                    stats['appearances'].append(i)
+            
+            # Tính khoảng cách giữa các lần xuất hiện
+            if len(stats['appearances']) > 1:
+                for i in range(1, len(stats['appearances'])):
+                    gap = stats['appearances'][i] - stats['appearances'][i-1]
+                    stats['gaps'].append(gap)
+            
+            # Phân loại cầu
+            stats['bridge_type'] = self.detect_bridge_type(stats, numbers_history)
+            
+            # Gán trạng thái
+            stats['current_state'] = self.determine_number_state(stats, numbers_history)
+            
+            # Thống kê theo khoảng thời gian
+            recent_history = numbers_history[-self.config.get('cold_threshold', 7):]
+            for i, draw in enumerate(recent_history):
+                if num in draw:
+                    stats['recent_periods'][len(recent_history)-i-1] += 1
+            
+            analysis[num] = stats
         
-        return predictions, confidence_details
+        return analysis
     
-    def calculate_pattern_strength(self, pair, numbers_history):
-        """Calculate pattern strength for a pair"""
-        strength = 0
+    def detect_bridge_type(self, stats, numbers_history):
+        """Nhận diện loại cầu theo đặc tả"""
+        if len(stats['appearances']) < 3:
+            return "INSUFFICIENT_DATA"
         
-        for numbers in numbers_history[-10:]:
-            if pair[0] in numbers and pair[1] in numbers:
-                pos1 = numbers.index(pair[0])
-                pos2 = numbers.index(pair[1])
-                pos_diff = abs(pos1 - pos2)
+        recent_appearances = stats['appearances'][-3:]
+        recent_gaps = stats['gaps'][-2:] if len(stats['gaps']) >= 2 else []
+        
+        # CẦU BỆT: Xuất hiện liên tục nhiều kỳ
+        if len(recent_appearances) >= 3:
+            gaps = [recent_appearances[i+1] - recent_appearances[i] for i in range(len(recent_appearances)-1)]
+            if all(gap == 1 for gap in gaps):
+                return "BET"
+        
+        # CẦU NHẢY: Xuất hiện → nghỉ → xuất hiện (nhịp đều)
+        if len(recent_gaps) >= 2:
+            if all(2 <= gap <= 3 for gap in recent_gaps) and len(set(recent_gaps)) == 1:
+                return "JUMP"
+        
+        # CẦU LẶP: Vừa ra kỳ trước lại ra tiếp
+        if len(stats['appearances']) >= 2:
+            last_gap = stats['appearances'][-1] - stats['appearances'][-2]
+            if last_gap == 1:
+                return "REPEAT"
+        
+        # CẦU HỒI: Biến mất nhiều kỳ rồi quay lại
+        if len(stats['gaps']) > 0:
+            last_gap = stats['gaps'][-1]
+            if last_gap >= self.config.get('cold_threshold', 7):
+                return "COMEBACK"
+        
+        return "NORMAL"
+    
+    def determine_number_state(self, stats, numbers_history):
+        """Gán trạng thái cho số đơn"""
+        if not stats['appearances']:
+            return "COLD"
+        
+        recent_history = numbers_history[-10:] if len(numbers_history) >= 10 else numbers_history
+        recent_appearances = [i for i in stats['appearances'] if i >= len(numbers_history) - len(recent_history)]
+        
+        # NÓNG: Ra dày, sát nhau
+        if len(recent_appearances) >= 3:
+            if max(recent_appearances) - min(recent_appearances) <= 4:
+                return "HOT"
+        
+        # NGUY HIỂM: Vừa ra hoặc ra dồn
+        if len(recent_appearances) >= 2:
+            gaps = [recent_appearances[i+1] - recent_appearances[i] for i in range(len(recent_appearances)-1)]
+            if any(gap == 1 for gap in gaps):
+                return "RISKY"
+        
+        # ỔN ĐỊNH: Ra đều, có nhịp
+        if len(stats['gaps']) >= 3:
+            gap_std = np.std(stats['gaps']) if stats['gaps'] else 0
+            if gap_std <= 1.5:
+                return "STABLE"
+        
+        # YẾU: Ít xuất hiện
+        if len(recent_appearances) <= 1:
+            return "WEAK"
+        
+        return "NORMAL"
+    
+    def analyze_pair_compatibility(self, num1_stats, num2_stats, numbers_history):
+        """Phân tích khả năng ghép cặp của 2 số"""
+        compatibility = {
+            'score': 50,
+            'reasons': [],
+            'warnings': []
+        }
+        
+        # ❌ CẤM TUYỆT ĐỐI số chập
+        if num1_stats['number'] == num2_stats['number']:
+            compatibility['score'] = 0
+            compatibility['warnings'].append("SỐ CHẬP - CẤM TUYỆT ĐỐI")
+            return compatibility
+        
+        # ❌ Không ghép 2 số đều nóng
+        if num1_stats['current_state'] == "HOT" and num2_stats['current_state'] == "HOT":
+            compatibility['score'] *= 0.3
+            compatibility['warnings'].append("2 số đều NÓNG - nguy cơ gãy cầu")
+        
+        # ❌ Không ghép 2 số đều nguy hiểm
+        if num1_stats['current_state'] == "RISKY" and num2_stats['current_state'] == "RISKY":
+            compatibility['score'] *= 0.4
+            compatibility['warnings'].append("2 số đều NGUY HIỂM")
+        
+        # ❌ Không ghép 2 số đều yếu
+        if num1_stats['current_state'] == "WEAK" and num2_stats['current_state'] == "WEAK":
+            compatibility['score'] *= 0.5
+            compatibility['warnings'].append("2 số đều YẾU - thiếu dữ liệu")
+        
+        # ✅ Ưu tiên: 1 số ổn định + 1 số đang hồi
+        if (num1_stats['current_state'] == "STABLE" and num2_stats['bridge_type'] == "COMEBACK") or \
+           (num2_stats['current_state'] == "STABLE" and num1_stats['bridge_type'] == "COMEBACK"):
+            compatibility['score'] *= 1.4
+            compatibility['reasons'].append("1 ổn định + 1 hồi cầu - tổ hợp tốt")
+        
+        # ✅ Ưu tiên: 1 số nhảy nhịp tốt + 1 số ổn định
+        if (num1_stats['bridge_type'] == "JUMP" and num2_stats['current_state'] == "STABLE") or \
+           (num2_stats['bridge_type'] == "JUMP" and num1_stats['current_state'] == "STABLE"):
+            compatibility['score'] *= 1.3
+            compatibility['reasons'].append("Nhảy nhịp + Ổn định - an toàn")
+        
+        # ⚠️ Cảnh báo cầu bệt
+        if num1_stats['bridge_type'] == "BET" or num2_stats['bridge_type'] == "BET":
+            compatibility['score'] *= 0.7
+            compatibility['warnings'].append("Có số đang BỆT - nguy cơ gãy")
+        
+        # ⚠️ Cảnh báo cầu lặp
+        if num1_stats['bridge_type'] == "REPEAT" or num2_stats['bridge_type'] == "REPEAT":
+            compatibility['score'] *= 0.6
+            compatibility['warnings'].append("Có số LẶP - xác suất thấp")
+        
+        # Kiểm tra xuất hiện cùng nhau trong lịch sử
+        together_count = 0
+        for draw in numbers_history[-20:]:
+            if num1_stats['number'] in draw and num2_stats['number'] in draw:
+                together_count += 1
+        
+        if together_count > 0:
+            compatibility['score'] *= (1 + together_count * 0.1)
+            compatibility['reasons'].append(f"Đã xuất hiện cùng nhau {together_count} lần")
+        
+        # Đảm bảo điểm số trong khoảng 0-100
+        compatibility['score'] = max(0, min(100, compatibility['score']))
+        
+        return compatibility
+    
+    def should_skip_draw(self, numbers_analysis, numbers_history):
+        """Logic KHÔNG ĐÁNH theo đặc tả"""
+        reasons = []
+        
+        # 🚫 Dữ liệu không đủ
+        if len(numbers_history) < self.config['min_draws']:
+            return True, [f"Dữ liệu chỉ có {len(numbers_history)} kỳ, cần ít nhất {self.config['min_draws']} kỳ"]
+        
+        # Đếm số trạng thái
+        state_counts = Counter()
+        for num, stats in numbers_analysis.items():
+            state_counts[stats['current_state']] += 1
+        
+        # 🚫 Toàn số quá nóng
+        if state_counts.get('HOT', 0) >= 7:
+            reasons.append("Quá nhiều số NÓNG (>7)")
+        
+        # 🚫 Nhiều số vừa ra kỳ trước
+        recent_numbers = set()
+        if len(numbers_history) > 0:
+            recent_numbers = set(numbers_history[-1])
+        
+        recent_repeat_count = 0
+        for num in recent_numbers:
+            if num in numbers_analysis:
+                if numbers_analysis[num]['bridge_type'] == 'REPEAT':
+                    recent_repeat_count += 1
+        
+        if recent_repeat_count >= 3:
+            reasons.append(f"Có {recent_repeat_count} số vừa ra kỳ trước")
+        
+        # 🚫 Phát hiện cầu gãy
+        bridge_types = [stats['bridge_type'] for stats in numbers_analysis.values()]
+        if bridge_types.count('BET') >= 2:
+            reasons.append("Phát hiện nhiều cầu BỆT có thể gãy")
+        
+        if reasons:
+            return True, reasons
+        
+        return False, []
+    
+    def predict_pairs(self, numbers_history):
+        """Dự đoán cặp số theo đặc tả chuẩn v2"""
+        if len(numbers_history) < 5:
+            return [], {}, "INSUFFICIENT_DATA", []
+        
+        # Phân tích từng số đơn
+        numbers_analysis = self.analyze_single_numbers(numbers_history)
+        
+        # Kiểm tra điều kiện KHÔNG ĐÁNH
+        should_skip, skip_reasons = self.should_skip_draw(numbers_analysis, numbers_history)
+        if should_skip:
+            return [], {}, "SKIP", skip_reasons
+        
+        # Tạo danh sách số có trạng thái tốt để ghép
+        candidate_numbers = []
+        for num, stats in numbers_analysis.items():
+            stats['number'] = num
+            
+            # Ưu tiên số có trạng thái tốt
+            if stats['current_state'] in ['STABLE', 'NORMAL']:
+                priority = 3
+            elif stats['current_state'] == 'WEAK':
+                priority = 2
+            elif stats['bridge_type'] == 'COMEBACK':
+                priority = 4  # Ưu tiên cầu hồi
+            elif stats['bridge_type'] == 'JUMP':
+                priority = 3  # Ưu tiên cầu nhảy
+            else:
+                priority = 1
+            
+            candidate_numbers.append((priority, num, stats))
+        
+        # Sắp xếp theo độ ưu tiên
+        candidate_numbers.sort(key=lambda x: x[0], reverse=True)
+        candidate_numbers = candidate_numbers[:8]  # Giới hạn số lượng
+        
+        # Ghép cặp và đánh giá
+        pair_predictions = []
+        
+        for i in range(len(candidate_numbers)):
+            for j in range(i+1, len(candidate_numbers)):
+                _, num1, stats1 = candidate_numbers[i]
+                _, num2, stats2 = candidate_numbers[j]
                 
-                if pos_diff >= 2:
-                    strength += 0.1
+                # ❌ Bỏ qua số chập
+                if num1 == num2:
+                    continue
+                
+                compatibility = self.analyze_pair_compatibility(stats1, stats2, numbers_history)
+                
+                if compatibility['score'] >= self.config['min_confidence']:
+                    pair = tuple(sorted([num1, num2]))
+                    pair_info = {
+                        'pair': pair,
+                        'score': compatibility['score'],
+                        'confidence': int(compatibility['score']),
+                        'num1_state': stats1['current_state'],
+                        'num2_state': stats2['current_state'],
+                        'num1_bridge': stats1['bridge_type'],
+                        'num2_bridge': stats2['bridge_type'],
+                        'reasons': compatibility['reasons'],
+                        'warnings': compatibility['warnings'],
+                        'details': {
+                            f"num{num1}": stats1,
+                            f"num{num2}": stats2
+                        }
+                    }
+                    pair_predictions.append(pair_info)
         
-        return min(1.0, strength)
-    
-    def count_recent_appearances(self, pair, numbers_history, window=10):
-        """Count how many times pair appeared recently"""
-        count = 0
-        try:
-            recent_history = numbers_history[-window:] if len(numbers_history) > window else numbers_history
-            
-            for numbers in recent_history:
-                if pair[0] in numbers and pair[1] in numbers:
-                    count += 1
-        except:
-            count = 0
+        # Sắp xếp theo độ tin cậy
+        pair_predictions.sort(key=lambda x: x['score'], reverse=True)
         
-        return count
-    
-    def generate_strategy_recommendations(self, top_pairs, confidence_details):
-        """Generate strategic recommendations based on predictions"""
-        strategies = []
+        # Giới hạn số lượng cặp
+        top_pairs = pair_predictions[:2]  # Tối đa 2 cặp theo đặc tả
         
-        for pair in top_pairs[:4]:
-            details = confidence_details.get(pair, {})
-            confidence = details.get('confidence', 0)
-            gap = details.get('gap', 0)
-            
-            strategy_info = {
-                'pair': pair,
-                'confidence': confidence,
-                'gap': gap,
-                'recent_appearances': details.get('recent_appearances', 0)
-            }
-            
-            if confidence >= 75:
-                strategy_info.update({
-                    'strategy': "ĐẶT CƯỢC MẠNH",
-                    'reason': f"Độ tin cậy rất cao ({confidence}%)",
-                    'color': 'success'
-                })
-            elif confidence >= 65:
-                strategy_info.update({
-                    'strategy': "ĐẶT CƯỢC VỪA",
-                    'reason': f"Độ tin cậy tốt ({confidence}%)",
-                    'color': 'info'
-                })
-            elif confidence >= 55:
-                strategy_info.update({
-                    'strategy': "ĐẶT CƯỢC NHẸ",
-                    'reason': f"Tiềm năng khá ({confidence}%)",
-                    'color': 'warning'
-                })
-            else:
-                strategy_info.update({
-                    'strategy': "THEO DÕI",
-                    'reason': f"Cần quan sát thêm ({confidence}%)",
-                    'color': 'secondary'
-                })
-            
-            if gap == 1:
-                strategy_info['gap_analysis'] = "⚠️ Số liền kề (tỉ lệ trúng thấp hơn)"
-            elif 2 <= gap <= 4:
-                strategy_info['gap_analysis'] = "✅ Khoảng cách tối ưu"
-            else:
-                strategy_info['gap_analysis'] = "📊 Khoảng cách xa"
-            
-            strategies.append(strategy_info)
+        # Chuyển đổi định dạng đầu ra
+        final_pairs = [info['pair'] for info in top_pairs]
+        confidence_details = {info['pair']: info for info in top_pairs}
         
-        return strategies
+        return final_pairs, confidence_details, "PREDICT", []
 
 # ================= DATA FUNCTIONS =================
 def load_data():
-    """Load historical data with error handling"""
+    """Load historical data"""
     if not os.path.exists(DATA_FILE):
-        return pd.DataFrame(columns=["time", "numbers", "source"])
+        return pd.DataFrame(columns=["time", "numbers", "period"])
     
     try:
         df = pd.read_csv(DATA_FILE)
         
-        required_cols = ["time", "numbers", "source"]
+        required_cols = ["time", "numbers", "period"]
         for col in required_cols:
             if col not in df.columns:
-                if col == "numbers" and len(df.columns) > 0:
-                    df["numbers"] = df.iloc[:, -1].astype(str)
+                if col == "numbers":
+                    df["numbers"] = df.iloc[:, 0].astype(str)
                 elif col == "time":
                     df["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                elif col == "source":
-                    df["source"] = "manual"
+                elif col == "period":
+                    df["period"] = range(len(df), 0, -1)
         
         df["numbers"] = df["numbers"].astype(str).str.strip()
-        return df[["time", "numbers", "source"]]
+        return df[["time", "numbers", "period"]]
     
     except Exception as e:
-        return pd.DataFrame(columns=["time", "numbers", "source"])
+        return pd.DataFrame(columns=["time", "numbers", "period"])
 
-def save_data(values, source="manual"):
-    """Save multiple entries with source tracking"""
+def save_data(values):
+    """Save data entries"""
     try:
         df = load_data()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        rows = []
+        new_rows = []
         for v in values:
             v_str = str(v).strip()
             if v_str.isdigit() and len(v_str) == 5:
-                rows.append({
+                period = len(df) + len(new_rows) + 1
+                new_rows.append({
                     "time": now, 
                     "numbers": v_str,
-                    "source": source
+                    "period": period
                 })
         
-        if rows:
-            new_df = pd.DataFrame(rows)
+        if new_rows:
+            new_df = pd.DataFrame(new_rows)
             df = pd.concat([df, new_df], ignore_index=True)
-            
-            df = df.drop_duplicates(subset=['numbers'], keep='first')
-            
-            try:
-                df['time'] = pd.to_datetime(df['time'])
-                df = df.sort_values('time', ascending=True)
-            except:
-                pass
-            
             df.to_csv(DATA_FILE, index=False)
         
-        return len(rows)
+        return len(new_rows)
     except:
         return 0
 
@@ -740,797 +410,413 @@ def parse_numbers(v):
         return []
 
 def get_statistics(df):
-    """Calculate comprehensive statistics"""
+    """Calculate statistics"""
     if df.empty:
         return {}
     
-    try:
-        all_numbers = []
-        number_sequences = []
-        
-        for nums_str in df['numbers']:
-            nums = parse_numbers(nums_str)
-            if len(nums) == 5:
-                all_numbers.extend(nums)
-                number_sequences.append(nums)
-        
-        if not all_numbers:
-            return {}
-        
-        counter = Counter(all_numbers)
-        total = len(all_numbers)
-        
-        stats = {
-            'total_draws': len(df),
-            'total_digits': total,
-            'frequency': dict(counter),
-            'percentage': {k: f"{(v/total*100):.1f}%" for k, v in counter.items()},
-            'most_common': counter.most_common(10),
-            'least_common': counter.most_common()[:-11:-1],
-            'hot_numbers': [n for n, c in counter.most_common(5)],
-            'warm_numbers': [n for n, c in counter.most_common(10)[5:8]],
-            'cold_numbers': [n for n, c in counter.most_common()[:-6:-1]],
-            'number_sequences': number_sequences,
-            'data_quality': len(number_sequences) / len(df) if len(df) > 0 else 0
-        }
-        
-        return stats
-    except:
+    all_numbers = []
+    number_sequences = []
+    
+    for nums_str in df['numbers']:
+        nums = parse_numbers(nums_str)
+        if len(nums) == 5:
+            all_numbers.extend(nums)
+            number_sequences.append(nums)
+    
+    if not all_numbers:
         return {}
+    
+    counter = Counter(all_numbers)
+    total = len(all_numbers)
+    
+    stats = {
+        'total_draws': len(df),
+        'number_sequences': number_sequences,
+        'frequency': dict(counter),
+        'percentage': {k: f"{(v/total*100):.1f}%" for k, v in counter.items()},
+        'most_common': counter.most_common(5),
+        'least_common': counter.most_common()[:-6:-1]
+    }
+    
+    return stats
 
 # ================= MAIN APP =================
 def main():
-    st.title("🎯 NUMCORE AI MASTER - 2 SỐ 5 TÍNH")
-    st.caption("AI NÂNG CAO - Loại bỏ số chập - Dự đoán chính xác - Chiến lược thông minh")
+    st.title("🎯 AI 2 TINH LOTOBET - BẢN CHUẨN v2")
+    st.caption("""
+    ⚠️ TUÂN THỦ ĐẶC TẢ LOGIC: 
+    • Loại bỏ số chập (11, 22, 33...) 
+    • Phân tích số đơn trước khi ghép 
+    • Logic KHÔNG ĐÁNH khi cần thiết
+    • Tối đa 1-2 cặp
+    """)
     
-    try:
-        ai = EnhancedTwoNumberAI()
-    except Exception as e:
-        st.error("⚠️ Đang khởi tạo AI nâng cao...")
-        ai = EnhancedTwoNumberAI()
+    ai = LotobetTwoNumberAI()
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📥 Nhập liệu",
         "🎯 Dự đoán AI",
         "📊 Phân tích số",
-        "🤖 Thuật toán",
         "⚙️ Cấu hình"
     ])
     
     # ============ TAB 1: DATA INPUT ============
     with tab1:
-        col1, col2 = st.columns([2, 1])
+        st.subheader("📥 NHẬP DỮ LIỆU LOTOBET")
         
+        raw = st.text_area(
+            "Nhập kết quả các kỳ (mỗi dòng 5 số)",
+            height=200,
+            placeholder="Ví dụ:\n12345\n67890\n54321\n...",
+            help="Mỗi dòng là 1 giải 5 số của Lotobet. AI sẽ tự động xử lý."
+        )
+        
+        col1, col2 = st.columns(2)
         with col1:
-            st.subheader("📥 Nhập dữ liệu giải thưởng")
-            
-            raw = st.text_area(
-                "Nhập nhiều kỳ (mỗi dòng 5 số)",
-                height=200,
-                placeholder="Ví dụ:\n12345\n67890\n54321\n...",
-                help="Mỗi dòng là một giải thưởng gồm 5 chữ số. Số chập (11, 22, 66...) sẽ được AI tự động xử lý.",
-                key="data_input"
-            )
-            
-            col_btn1, col_btn2 = st.columns(2)
-            with col_btn1:
-                if st.button("💾 Lưu dữ liệu", type="primary", use_container_width=True):
-                    if raw.strip():
-                        lines = [x.strip() for x in raw.splitlines() if x.strip()]
-                        saved = save_data(lines)
-                        
-                        if saved > 0:
-                            st.success(f"✅ Đã lưu {saved} kỳ hợp lệ")
-                            st.rerun()
-                        else:
-                            st.error("❌ Không có dữ liệu hợp lệ")
+            if st.button("💾 Lưu dữ liệu", type="primary", use_container_width=True):
+                if raw.strip():
+                    lines = [x.strip() for x in raw.splitlines() if x.strip()]
+                    saved = save_data(lines)
+                    
+                    if saved > 0:
+                        st.success(f"✅ Đã lưu {saved} kỳ hợp lệ")
+                        st.rerun()
                     else:
-                        st.warning("⚠️ Vui lòng nhập dữ liệu")
-            
-            with col_btn2:
-                if st.button("🔄 Làm mới dữ liệu", use_container_width=True):
-                    st.rerun()
+                        st.error("❌ Không có dữ liệu hợp lệ (cần đúng 5 số)")
+                else:
+                    st.warning("⚠️ Vui lòng nhập dữ liệu")
         
         with col2:
-            st.subheader("📁 Thông tin dữ liệu")
-            df = load_data()
-            
-            if not df.empty:
-                st.metric("Tổng số kỳ", len(df))
-                
-                try:
-                    df['time'] = pd.to_datetime(df['time'])
-                    latest = df['time'].max().strftime("%d/%m/%Y")
-                    st.metric("Dữ liệu mới nhất", latest)
-                except:
-                    st.metric("Dữ liệu mới nhất", "N/A")
-                
-                stats = get_statistics(df)
-                if stats:
-                    hot_num = stats['hot_numbers'][0] if stats['hot_numbers'] else "--"
-                    st.metric("Số nóng nhất", hot_num)
-                
-                with st.expander("📋 5 kỳ gần nhất"):
-                    display_df = df.tail(5).copy()
-                    if 'time' in display_df.columns:
-                        try:
-                            display_df['time'] = pd.to_datetime(display_df['time']).dt.strftime('%H:%M %d/%m')
-                        except:
-                            pass
-                    st.dataframe(
-                        display_df[['time', 'numbers']],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "time": "Thời gian",
-                            "numbers": "Số"
-                        }
-                    )
-            else:
-                st.info("📭 Chưa có dữ liệu")
-                st.caption("Nhập dữ liệu để bắt đầu phân tích")
+            if st.button("🔄 Làm mới", use_container_width=True):
+                st.rerun()
+        
+        st.divider()
+        
+        df = load_data()
+        if not df.empty:
+            st.subheader("📋 DỮ LIỆU HIỆN CÓ")
+            st.dataframe(
+                df.tail(10),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "period": "Kỳ",
+                    "time": "Thời gian",
+                    "numbers": "Kết quả"
+                }
+            )
+        else:
+            st.info("📭 Chưa có dữ liệu. Vui lòng nhập ít nhất 15 kỳ để phân tích.")
     
     # ============ TAB 2: AI PREDICTION ============
     with tab2:
         df = load_data()
         
         if df.empty:
-            st.warning("⏳ Vui lòng nhập dữ liệu trước khi phân tích")
-            st.info("Chuyển sang tab '📥 Nhập liệu' để thêm dữ liệu")
+            st.warning("⏳ Vui lòng nhập dữ liệu ở tab '📥 Nhập liệu'")
+            return
+        
+        stats = get_statistics(df)
+        numbers_history = stats.get('number_sequences', [])
+        
+        st.subheader("🎯 PHÂN TÍCH & DỰ ĐOÁN")
+        
+        # Hiển thị thông tin cơ bản
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Tổng số kỳ", len(numbers_history))
+        with col2:
+            st.metric("Số kỳ tối thiểu", f"{ai.config['min_draws']}+")
+        with col3:
+            st.metric("Độ tin cậy yêu cầu", f"{ai.config['min_confidence']}%")
+        
+        # Phân tích và dự đoán
+        if len(numbers_history) < 5:
+            st.warning(f"⚠️ Cần ít nhất 5 kỳ để phân tích (hiện có: {len(numbers_history)})")
         else:
-            stats = get_statistics(df)
+            with st.spinner("🤖 AI đang phân tích theo đặc tả chuẩn..."):
+                top_pairs, confidence_details, status, skip_reasons = ai.predict_pairs(numbers_history)
             
-            if 'number_sequences' not in stats:
-                st.error("Dữ liệu không đúng định dạng 5 số")
-                return
-            
-            numbers_history = stats['number_sequences']
-            hot_numbers = stats.get('hot_numbers', [])
-            cold_numbers = stats.get('cold_numbers', [])
-            
-            if len(numbers_history) < 10:
-                st.warning(f"⚠️ Cần ít nhất 10 kỳ để phân tích (hiện có: {len(numbers_history)})")
-                
-                if hot_numbers:
-                    st.subheader("🔥 Số nóng hiện tại")
-                    hot_cols = st.columns(5)
-                    for idx, num in enumerate(hot_numbers[:5]):
-                        with hot_cols[idx]:
-                            percent = stats['percentage'].get(num, "0%")
-                            st.metric(f"Số {num}", f"{percent}")
-                return
-            
-            st.subheader("🎯 AI DỰ ĐOÁN CẶP SỐ")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Số kỳ phân tích", len(numbers_history))
-            with col2:
-                data_quality = stats.get('data_quality', 0)
-                st.metric("Chất lượng dữ liệu", f"{data_quality*100:.0f}%")
-            with col3:
-                hot_num = hot_numbers[0] if hot_numbers else "--"
-                st.metric("Số nóng nhất", hot_num)
-            with col4:
-                cold_num = cold_numbers[0] if cold_numbers else "--"
-                st.metric("Số lạnh nhất", cold_num)
-            
-            try:
-                top_pairs, confidence_details = ai.predict_top_pairs(
-                    numbers_history, hot_numbers, cold_numbers, num_pairs=8
-                )
-            except Exception as e:
-                st.error("⚠️ Có lỗi khi phân tích dữ liệu. Vui lòng thử lại.")
-                top_pairs = []
-                confidence_details = {}
-            
-            if not top_pairs:
-                st.info("🔍 Đang phân tích dữ liệu... Hãy nhập thêm dữ liệu")
-                return
-            
-            st.subheader("🏆 TOP CẶP SỐ DỰ ĐOÁN")
-            
-            top_cols = st.columns(4)
-            for idx, (pair, col) in enumerate(zip(top_pairs[:4], top_cols)):
-                with col:
-                    details = confidence_details.get(pair, {})
-                    confidence = details.get('confidence', 0)
-                    gap = details.get('gap', 0)
-                    
-                    if confidence >= 75:
-                        badge = "🔥"
-                        color = "green"
-                    elif confidence >= 65:
-                        badge = "⭐"
-                        color = "blue"
-                    elif confidence >= 55:
-                        badge = "📈"
-                        color = "orange"
-                    else:
-                        badge = "📊"
-                        color = "gray"
-                    
-                    st.markdown(f"""
-                    <div style="text-align: center; padding: 15px; border-radius: 10px; 
-                                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                                border: 2px solid {color}; margin: 5px;">
-                        <h3 style="color: {color}; margin: 0;">{badge} Cặp {idx+1}</h3>
-                        <h1 style="font-size: 2.5em; margin: 10px 0; color: #2c3e50;">{pair[0]}{pair[1]}</h1>
-                        <div style="font-size: 1.2em; color: {color}; font-weight: bold;">
-                            {confidence}% tin cậy
-                        </div>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
-                            Khoảng cách: {gap} | Gần đây: {details.get('recent_appearances', 0)}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            st.divider()
-            
-            st.subheader("🎯 CHIẾN LƯỢC ĐẶT CƯỢC THÔNG MINH")
-            
-            try:
-                strategies = ai.generate_strategy_recommendations(top_pairs, confidence_details)
-            except:
-                strategies = []
-            
-            if strategies:
-                strategy_cols = st.columns(min(4, len(strategies)))
-                for idx, (strategy, col) in enumerate(zip(strategies[:4], strategy_cols)):
-                    with col:
-                        pair_str = f"{strategy['pair'][0]}{strategy['pair'][1]}"
-                        
-                        if strategy['color'] == 'success':
-                            st.success(f"**{pair_str}** - {strategy['strategy']}")
-                        elif strategy['color'] == 'info':
-                            st.info(f"**{pair_str}** - {strategy['strategy']}")
-                        elif strategy['color'] == 'warning':
-                            st.warning(f"**{pair_str}** - {strategy['strategy']}")
-                        else:
-                            st.markdown(f"**{pair_str}** - {strategy['strategy']}")
-                        
-                        st.caption(f"{strategy['reason']}")
-                        st.caption(f"📊 {strategy['gap_analysis']}")
-                        
-                        with st.expander("📈 Thống kê nhanh"):
-                            st.write(f"**Độ tin cậy:** {strategy['confidence']}%")
-                            st.write(f"**Khoảng cách:** {strategy['gap']}")
-                            st.write(f"**Xuất hiện gần đây:** {strategy['recent_appearances']} lần")
-            
-            st.divider()
-            
-            st.subheader("🔍 PHÂN TÍCH CHI TIẾT CẶP SỐ")
-            
-            if top_pairs:
-                options = []
-                for pair in top_pairs:
-                    details = confidence_details.get(pair, {})
-                    confidence = details.get('confidence', 0)
-                    gap = details.get('gap', 0)
-                    options.append(f"{pair[0]}{pair[1]} (Độ tin cậy: {confidence}%, Khoảng cách: {gap})")
-                
-                selected_option = st.selectbox(
-                    "Chọn cặp số để phân tích chi tiết:",
-                    options=options,
-                    index=0
-                )
-                
-                if selected_option:
-                    pair_str = selected_option.split(" ")[0]
-                    if len(pair_str) == 2:
-                        pair_tuple = (int(pair_str[0]), int(pair_str[1]))
-                        details = confidence_details.get(pair_tuple, {})
-                        
-                        if details:
-                            detail_col1, detail_col2 = st.columns(2)
-                            
-                            with detail_col1:
-                                st.markdown("### 📊 Thống kê cơ bản")
-                                
-                                confidence = details.get('confidence', 0)
-                                # FIXED: Ensure progress value is between 0 and 1
-                                progress_value = max(0.0, min(1.0, confidence/100))
-                                st.progress(progress_value, text=f"Độ tin cậy: {confidence}%")
-                                
-                                metrics_data = {
-                                    "Điểm số AI": f"{details.get('score', 0):.3f}",
-                                    "Khoảng cách số": str(details.get('gap', 0)),
-                                    "Xuất hiện gần đây": f"{details.get('recent_appearances', 0)} lần",
-                                    "Tổng lần xuất hiện": f"{details.get('historical_frequency', 0)} lần"
-                                }
-                                
-                                for key, value in metrics_data.items():
-                                    st.write(f"**{key}:** {value}")
-                                
-                                st.markdown("### 🔥 Trạng thái số")
-                                for num in pair_tuple:
-                                    if num in hot_numbers[:3]:
-                                        status = f"**Số {num}:** 🔥 Số nóng hàng đầu"
-                                    elif num in hot_numbers:
-                                        status = f"**Số {num}:** ⭐ Số nóng"
-                                    elif num in cold_numbers:
-                                        status = f"**Số {num}:** ❄️ Số lạnh (tiềm năng)"
-                                    else:
-                                        status = f"**Số {num}:** 📊 Số trung bình"
-                                    st.write(status)
-                            
-                            with detail_col2:
-                                st.markdown("### 🎯 Đánh giá chiến lược")
-                                
-                                gap = details.get('gap', 0)
-                                if gap == 1:
-                                    st.warning("**Khoảng cách liền kề:** Cặp số liền nhau thường có tỉ lệ trúng thấp hơn trong trò chơi 2 số 5 tính.")
-                                elif 2 <= gap <= 4:
-                                    st.success("**Khoảng cách tối ưu:** Khoảng cách từ 2-4 là lý tưởng cho cặp số.")
-                                else:
-                                    st.info("**Khoảng cách xa:** Có thể tạo ra sự bất ngờ.")
-                                
-                                if details.get('is_consecutive'):
-                                    st.warning("⚠️ **Cảnh báo:** Số liền kề thường ít xuất hiện cùng nhau.")
-                                
-                                recent = details.get('recent_appearances', 0)
-                                if recent >= 2:
-                                    st.success(f"✅ **Xu hướng tốt:** Đã xuất hiện {recent} lần gần đây.")
-                                elif recent == 1:
-                                    st.info(f"📈 **Đang nổi:** Vừa xuất hiện trong kỳ gần nhất.")
-                                else:
-                                    st.info(f"🔍 **Tiềm năng:** Chưa xuất hiện gần đây, có thể là cơ hội.")
-            
-            st.divider()
-            
-            st.subheader("📋 TẤT CẢ CẶP SỐ DỰ ĐOÁN")
-            
-            pairs_data = []
-            for pair in top_pairs:
-                details = confidence_details.get(pair, {})
-                
-                confidence = details.get('confidence', 0)
-                if confidence >= 75:
-                    status = "🔥 Rất tốt"
-                elif confidence >= 65:
-                    status = "⭐ Tốt"
-                elif confidence >= 55:
-                    status = "📈 Khá"
+            if status == "INSUFFICIENT_DATA":
+                st.error("❌ Dữ liệu không đủ để phân tích")
+            elif status == "SKIP":
+                st.error("🚫 KHÔNG ĐÁNH KỲ NÀY")
+                st.warning("**Lý do:**")
+                for reason in skip_reasons:
+                    st.write(f"• {reason}")
+                st.info("""
+                **Theo đặc tả logic:**
+                - Dữ liệu nhiễu / ít kỳ
+                - Cầu gãy
+                - Toàn số quá nóng
+                - Nhiều số vừa ra kỳ trước
+                - Không có cặp đạt ngưỡng an toàn
+                """)
+            elif status == "PREDICT":
+                if not top_pairs:
+                    st.warning("⚠️ Không tìm thấy cặp số đạt ngưỡng an toàn")
+                    st.info("Xem xét 'KHÔNG ĐÁNH' theo đặc tả logic")
                 else:
-                    status = "📊 Theo dõi"
-                
-                pairs_data.append({
-                    'Cặp số': f"{pair[0]}{pair[1]}",
-                    'Độ tin cậy': f"{confidence}%",
-                    'Trạng thái': status,
-                    'Khoảng cách': details.get('gap', 0),
-                    'Gần đây': details.get('recent_appearances', 0),
-                    'Lịch sử': details.get('historical_frequency', 0),
-                    'Điểm số': round(details.get('score', 0), 3)
-                })
-            
-            if pairs_data:
-                pairs_df = pd.DataFrame(pairs_data)
-                
-                def color_status(val):
-                    if "🔥" in val:
-                        return 'background-color: #ffcccc'
-                    elif "⭐" in val:
-                        return 'background-color: #ccffcc'
-                    elif "📈" in val:
-                        return 'background-color: #ffffcc'
-                    else:
-                        return 'background-color: #e6e6e6'
-                
-                styled_df = pairs_df.style.applymap(color_status, subset=['Trạng thái'])
-                
-                st.dataframe(
-                    styled_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Cặp số": st.column_config.TextColumn("Cặp số", width="small"),
-                        "Độ tin cậy": st.column_config.ProgressColumn(
-                            "Độ tin cậy",
-                            min_value=0,
-                            max_value=100,
-                            format="%d%%"
-                        ),
-                        "Trạng thái": st.column_config.TextColumn("Trạng thái", width="medium"),
-                        "Khoảng cách": st.column_config.NumberColumn("K.cách", width="small"),
-                        "Gần đây": st.column_config.NumberColumn("Gần đây", width="small"),
-                        "Lịch sử": st.column_config.NumberColumn("Lịch sử", width="small"),
-                        "Điểm số": st.column_config.NumberColumn("Điểm", format="%.3f", width="small")
-                    }
-                )
+                    st.success(f"✅ AI đề xuất {len(top_pairs)} cặp số")
+                    
+                    # Hiển thị cặp số dự đoán
+                    cols = st.columns(len(top_pairs))
+                    for idx, (pair, col) in enumerate(zip(top_pairs, cols)):
+                        with col:
+                            details = confidence_details.get(pair, {})
+                            confidence = details.get('confidence', 0)
+                            
+                            if confidence >= 75:
+                                color = "#4CAF50"
+                                badge = "🔥"
+                            elif confidence >= 65:
+                                color = "#2196F3"
+                                badge = "⭐"
+                            else:
+                                color = "#FF9800"
+                                badge = "📊"
+                            
+                            st.markdown(f"""
+                            <div style="text-align: center; padding: 15px; border-radius: 10px; 
+                                        background: white; border: 3px solid {color}; margin: 5px;">
+                                <h3 style="color: {color}; margin: 0;">{badge} Cặp {idx+1}</h3>
+                                <h1 style="font-size: 2.5em; margin: 10px 0; color: #2c3e50;">
+                                    {pair[0]}{pair[1]}
+                                </h1>
+                                <div style="font-size: 1.2em; color: {color}; font-weight: bold;">
+                                    {confidence}% tin cậy
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    # Hiển thị phân tích chi tiết
+                    st.divider()
+                    st.subheader("🔍 PHÂN TÍCH CHI TIẾT")
+                    
+                    for pair in top_pairs:
+                        details = confidence_details.get(pair, {})
+                        with st.expander(f"📊 Phân tích cặp {pair[0]}{pair[1]} ({details.get('confidence', 0)}%)"):
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                st.write(f"**Số {pair[0]}:**")
+                                st.write(f"- Trạng thái: {details.get('num1_state', 'N/A')}")
+                                st.write(f"- Loại cầu: {details.get('num1_bridge', 'N/A')}")
+                            
+                            with col2:
+                                st.write(f"**Số {pair[1]}:**")
+                                st.write(f"- Trạng thái: {details.get('num2_state', 'N/A')}")
+                                st.write(f"- Loại cầu: {details.get('num2_bridge', 'N/A')}")
+                            
+                            if details.get('reasons'):
+                                st.success("**Ưu điểm:**")
+                                for reason in details['reasons']:
+                                    st.write(f"✓ {reason}")
+                            
+                            if details.get('warnings'):
+                                st.warning("**Cảnh báo:**")
+                                for warning in details['warnings']:
+                                    st.write(f"⚠ {warning}")
+                            
+                            st.caption(f"**Lưu ý:** {details.get('confidence', 0)}% là độ tin cậy của AI, không phải xác suất trúng giải")
     
     # ============ TAB 3: NUMBER ANALYSIS ============
     with tab3:
-        st.subheader("📊 PHÂN TÍCH SỐ HỌC NÂNG CAO")
-        
         df = load_data()
         
         if df.empty:
             st.info("📭 Chưa có dữ liệu để phân tích")
-        else:
-            stats = get_statistics(df)
-            
-            if not stats:
-                return
-            
-            overview_cols = st.columns(4)
-            with overview_cols[0]:
-                st.metric("Tổng số kỳ", stats['total_draws'])
-            with overview_cols[1]:
-                st.metric("Tổng lượt số", stats['total_digits'])
-            with overview_cols[2]:
-                coverage = len(stats['frequency']) / 10 * 100
-                st.metric("Độ phủ số", f"{coverage:.1f}%")
-            with overview_cols[3]:
-                data_quality = stats.get('data_quality', 0) * 100
-                st.metric("Chất lượng DL", f"{data_quality:.0f}%")
-            
-            st.divider()
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("🔥 TOP SỐ NÓNG")
-                
-                if stats['hot_numbers']:
-                    hot_data = []
-                    for num in stats['hot_numbers'][:5]:
-                        count = stats['frequency'].get(num, 0)
-                        percent = stats['percentage'].get(num, "0%")
-                        hot_data.append({
-                            'Số': num,
-                            'Lần xuất hiện': count,
-                            'Tỉ lệ': percent,
-                            'Trạng thái': 'Rất nóng' if num == stats['hot_numbers'][0] else 'Nóng'
-                        })
-                    
-                    hot_df = pd.DataFrame(hot_data)
-                    st.dataframe(
-                        hot_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    
-                    st.markdown("**📈 Biểu đồ số nóng:**")
-                    hot_counts = {num: stats['frequency'].get(num, 0) for num in stats['hot_numbers'][:5]}
-                    if hot_counts:
-                        hot_series = pd.Series(hot_counts)
-                        st.bar_chart(hot_series)
-            
-            with col2:
-                st.subheader("❄️ TOP SỐ LẠNH")
-                
-                if stats['cold_numbers']:
-                    cold_data = []
-                    for num in stats['cold_numbers'][:5]:
-                        count = stats['frequency'].get(num, 0)
-                        percent = stats['percentage'].get(num, "0%")
-                        cold_data.append({
-                            'Số': num,
-                            'Lần xuất hiện': count,
-                            'Tỉ lệ': percent,
-                            'Trạng thái': 'Rất lạnh' if num == stats['cold_numbers'][0] else 'Lạnh'
-                        })
-                    
-                    cold_df = pd.DataFrame(cold_data)
-                    st.dataframe(
-                        cold_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                    
-                    st.info("💡 **Gợi ý:** Số lạnh có thể sẽ xuất hiện trở lại theo chu kỳ. Kết hợp số lạnh với số nóng thường tạo ra cặp số tiềm năng.")
-            
-            st.divider()
-            
-            st.subheader("🔍 PHÁT HIỆN MẪU SỐ")
-            
-            if 'number_sequences' in stats and len(stats['number_sequences']) >= 10:
-                numbers_history = stats['number_sequences']
-                
-                pattern_cols = st.columns(3)
-                
-                with pattern_cols[0]:
-                    st.write("**🎯 Số thường đi cùng:**")
-                    pair_counter = Counter()
-                    for numbers in numbers_history[-15:]:
-                        if len(numbers) == 5:
-                            unique_nums = sorted(set(numbers))
-                            for i in range(len(unique_nums)):
-                                for j in range(i+1, len(unique_nums)):
-                                    pair = (unique_nums[i], unique_nums[j])
-                                    pair_counter[pair] += 1
-                    
-                    for pair, count in pair_counter.most_common(3):
-                        st.write(f"{pair[0]}{pair[1]}: {count} lần")
-                
-                with pattern_cols[1]:
-                    st.write("**📊 Phân bố chẵn/lẻ:**")
-                    even_odd_counts = {'Chẵn': 0, 'Lẻ': 0}
-                    for numbers in numbers_history[-10:]:
-                        for num in numbers:
-                            if num % 2 == 0:
-                                even_odd_counts['Chẵn'] += 1
-                            else:
-                                even_odd_counts['Lẻ'] += 1
-                    
-                    total = sum(even_odd_counts.values())
-                    if total > 0:
-                        st.write(f"Chẵn: {even_odd_counts['Chẵn']} ({even_odd_counts['Chẵn']/total*100:.1f}%)")
-                        st.write(f"Lẻ: {even_odd_counts['Lẻ']} ({even_odd_counts['Lẻ']/total*100:.1f}%)")
-                
-                with pattern_cols[2]:
-                    st.write("**🔢 Phân bố lớn/nhỏ:**")
-                    size_counts = {'Nhỏ (0-4)': 0, 'Lớn (5-9)': 0}
-                    for numbers in numbers_history[-10:]:
-                        for num in numbers:
-                            if num <= 4:
-                                size_counts['Nhỏ (0-4)'] += 1
-                            else:
-                                size_counts['Lớn (5-9)'] += 1
-                    
-                    total = sum(size_counts.values())
-                    if total > 0:
-                        st.write(f"Nhỏ: {size_counts['Nhỏ (0-4)']} ({size_counts['Nhỏ (0-4)']/total*100:.1f}%)")
-                        st.write(f"Lớn: {size_counts['Lớn (5-9)']} ({size_counts['Lớn (5-9)']/total*100:.1f}%)")
-            
-            st.divider()
-            st.subheader("📅 DỮ LIỆU GẦN ĐÂY")
-            
-            if not df.empty:
-                recent_df = df.tail(8).copy()
-                if 'time' in recent_df.columns:
-                    try:
-                        recent_df['time'] = pd.to_datetime(recent_df['time']).dt.strftime('%H:%M %d/%m')
-                    except:
-                        pass
-                
-                st.dataframe(
-                    recent_df[['time', 'numbers']],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "time": "Thời gian",
-                        "numbers": "Số"
-                    }
-                )
-    
-    # ============ TAB 4: ALGORITHM ANALYSIS ============
-    with tab4:
-        st.subheader("🤖 PHÂN TÍCH THUẬT TOÁN AI")
+            return
         
-        st.markdown("""
-        ### 🎯 6 THUẬT TOÁN NÂNG CAO
+        stats = get_statistics(df)
+        numbers_history = stats.get('number_sequences', [])
         
-        Phiên bản AI Master sử dụng 6 thuật toán chuyên biệt cho trò chơi **2 số 5 tính**:
+        if len(numbers_history) < 5:
+            st.warning("Cần ít nhất 5 kỳ để phân tích")
+            return
         
-        1. **🔢 Tần suất nâng cao** (20%) - Phân tích tần suất xuất hiện của cặp số, loại bỏ số chập
-        2. **📏 Phân tích khoảng cách** (18%) - Tối ưu khoảng cách giữa 2 số (tránh số liền kề)
-        3. **🔥❄️ Kết hợp nóng-lạnh** (18%) - Kết hợp số nóng với số lạnh tiềm năng
-        4. **🎯 Nhận diện mẫu** (15%) - Phát hiện pattern xuất hiện của cặp số
-        5. **📍 Phân tích vị trí** (15%) - Vị trí xuất hiện trong giải 5 số
-        6. **📈 Phân tích xu hướng** (14%) - Xu hướng tăng/giảm của từng số
+        st.subheader("📊 PHÂN TÍCH SỐ ĐƠN (0-9)")
         
-        **⚡ Ưu điểm:** Tự động loại bỏ số chập (11, 22, 33...), tối ưu khoảng cách số, kết hợp thông minh giữa số nóng và số lạnh.
-        """)
+        # Phân tích số đơn
+        analysis = ai.analyze_single_numbers(numbers_history)
         
-        df = load_data()
+        # Hiển thị bảng phân tích
+        analysis_data = []
+        for num in range(10):
+            stats = analysis.get(num, {})
+            analysis_data.append({
+                'Số': num,
+                'Trạng thái': stats.get('current_state', 'UNKNOWN'),
+                'Loại cầu': stats.get('bridge_type', 'N/A'),
+                'Số lần xuất hiện': len(stats.get('appearances', [])),
+                'Khoảng cách TB': np.mean(stats.get('gaps', [0])) if stats.get('gaps') else 0,
+                'Xuất hiện gần nhất': len(numbers_history) - stats['appearances'][-1] if stats.get('appearances') else 'Chưa'
+            })
         
-        if not df.empty:
-            stats = get_statistics(df)
-            
-            if 'number_sequences' in stats and len(stats['number_sequences']) >= 10:
-                numbers_history = stats['number_sequences']
-                hot_numbers = stats.get('hot_numbers', [])
-                cold_numbers = stats.get('cold_numbers', [])
-                
-                st.divider()
-                st.subheader("📊 HIỆU SUẤT THUẬT TOÁN")
-                
-                algorithms = [
-                    ("Tần suất", ai.algorithm_frequency_based),
-                    ("Khoảng cách", ai.algorithm_gap_analysis),
-                    ("Nóng-Lạnh", ai.algorithm_hot_cold_mix),
-                    ("Mẫu số", ai.algorithm_pattern_based_enhanced),
-                    ("Vị trí", ai.algorithm_position_based_enhanced),
-                    ("Xu hướng", ai.algorithm_trend_based_enhanced)
-                ]
-                
-                algo_cols = st.columns(3)
-                for idx, (algo_name, algo_func) in enumerate(algorithms):
-                    with algo_cols[idx % 3]:
-                        try:
-                            if algo_name == "Nóng-Lạnh":
-                                results = algo_func(numbers_history, hot_numbers, cold_numbers)
-                            elif algo_name == "Tần suất":
-                                results = algo_func(numbers_history, hot_numbers)
-                            else:
-                                results = algo_func(numbers_history)
-                            
-                            st.write(f"**{algo_name}:**")
-                            
-                            if results:
-                                top_2 = results[:2]
-                                for i, (pair, score) in enumerate(top_2):
-                                    if pair[0] != pair[1]:
-                                        st.write(f"{i+1}. **{pair[0]}{pair[1]}** ({score:.3f})")
-                                    else:
-                                        st.write(f"{i+1}. ❌ {pair[0]}{pair[1]} (số chập)")
-                            else:
-                                st.write("⏳ Đang tính toán...")
-                        except:
-                            st.write(f"**{algo_name}:** 🔄 Đang xử lý...")
-                
-                st.divider()
-                st.subheader("⚖️ CƠ CHẾ KẾT HỢP THUẬT TOÁN")
-                
-                st.info("""
-                **AI Master sử dụng cơ chế kết hợp thông minh:**
-                
-                - Mỗi thuật toán có **trọng số** riêng dựa trên hiệu quả
-                - **Tự động loại bỏ** cặp số chập (11, 22, 33...)
-                - **Ưu tiên** khoảng cách số tối ưu (2-4)
-                - **Giảm điểm** số liền kề (0-1, 1-2...)
-                - **Kết hợp** số nóng với số lạnh tiềm năng
-                - **Phân tích** pattern lịch sử xuất hiện
-                """)
-    
-    # ============ TAB 5: CONFIGURATION ============
-    with tab5:
-        st.subheader("⚙️ CẤU HÌNH AI NÂNG CAO")
+        analysis_df = pd.DataFrame(analysis_data)
         
-        try:
-            ai.load_config()
-            current_config = ai.config
-        except:
-            current_config = ai.config
+        # Tô màu theo trạng thái
+        def color_state(val):
+            if val == 'HOT':
+                return 'background-color: #ffcccc'
+            elif val == 'RISKY':
+                return 'background-color: #ffebcc'
+            elif val == 'STABLE':
+                return 'background-color: #ccffcc'
+            elif val == 'WEAK':
+                return 'background-color: #cce5ff'
+            elif val == 'COLD':
+                return 'background-color: #e6e6e6'
+            return ''
         
-        st.markdown("### ⚖️ ĐIỀU CHỈNH TRỌNG SỐ THUẬT TOÁN")
+        styled_df = analysis_df.style.applymap(color_state, subset=['Trạng thái'])
+        
+        st.dataframe(
+            styled_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Số": st.column_config.NumberColumn("Số", width="small"),
+                "Trạng thái": st.column_config.TextColumn("Trạng thái", width="medium"),
+                "Loại cầu": st.column_config.TextColumn("Loại cầu", width="medium"),
+                "Số lần xuất hiện": st.column_config.NumberColumn("Số lần", width="small"),
+                "Khoảng cách TB": st.column_config.NumberColumn("K.cách TB", format="%.1f", width="small"),
+                "Xuất hiện gần nhất": st.column_config.TextColumn("Gần nhất", width="small")
+            }
+        )
+        
+        st.divider()
+        
+        # Phân tích cầu
+        st.subheader("📈 PHÂN TÍCH LOẠI CẦU")
+        
+        bridge_counts = Counter()
+        state_counts = Counter()
+        
+        for num, stats in analysis.items():
+            bridge_counts[stats.get('bridge_type', 'UNKNOWN')] += 1
+            state_counts[stats.get('current_state', 'UNKNOWN')] += 1
         
         col1, col2 = st.columns(2)
         
         with col1:
-            freq_weight = st.slider(
-                "Thuật toán Tần suất",
-                0.05, 0.35, float(current_config['algorithm_weights'].get('frequency_based', 0.20)), 0.05
-            )
-            
-            gap_weight = st.slider(
-                "Thuật toán Khoảng cách",
-                0.05, 0.35, float(current_config['algorithm_weights'].get('gap_analysis', 0.18)), 0.05
-            )
-            
-            hotcold_weight = st.slider(
-                "Thuật toán Nóng-Lạnh",
-                0.05, 0.35, float(current_config['algorithm_weights'].get('hot_cold_mix', 0.18)), 0.05
-            )
+            st.write("**Phân bố loại cầu:**")
+            for bridge_type, count in bridge_counts.most_common():
+                st.write(f"{bridge_type}: {count} số")
         
         with col2:
-            pattern_weight = st.slider(
-                "Thuật toán Mẫu số",
-                0.05, 0.30, float(current_config['algorithm_weights'].get('pattern_based', 0.15)), 0.05
-            )
-            
-            position_weight = st.slider(
-                "Thuật toán Vị trí",
-                0.05, 0.30, float(current_config['algorithm_weights'].get('position_based', 0.15)), 0.05
-            )
-            
-            trend_weight = st.slider(
-                "Thuật toán Xu hướng",
-                0.05, 0.30, float(current_config['algorithm_weights'].get('trend_based', 0.14)), 0.05
-            )
+            st.write("**Phân bố trạng thái:**")
+            for state, count in state_counts.most_common():
+                st.write(f"{state}: {count} số")
         
         st.divider()
         
-        st.markdown("### 🎯 THIẾT LẬP NÂNG CAO")
+        # Hiển thị giải thích
+        st.subheader("📚 GIẢI THÍCH THUẬT NGỮ")
         
-        col3, col4 = st.columns(2)
+        with st.expander("Xem giải thích chi tiết"):
+            st.markdown("""
+            ### 🎯 TRẠNG THÁI SỐ:
+            - **NÓNG**: Ra dày, sát nhau (≥3 lần trong 4-5 kỳ)
+            - **NGUY HIỂM**: Vừa ra hoặc ra dồn (liên tiếp)
+            - **ỔN ĐỊNH**: Ra đều, có nhịp (khoảng cách ổn định)
+            - **YẾU**: Ít xuất hiện (≤1 lần trong 10 kỳ gần)
+            - **LẠNH**: Chưa xuất hiện hoặc rất lâu
+            
+            ### 🌉 LOẠI CẦU:
+            - **BỆT**: Lặp đi lặp lại nhiều kỳ (nguy cơ gãy)
+            - **NHẢY**: Xuất hiện → nghỉ → xuất hiện (nhịp đều 2-3)
+            - **LẶP**: Vừa ra kỳ trước lại ra tiếp (xác suất thấp)
+            - **HỒI**: Biến mất nhiều kỳ rồi quay lại (tiềm năng)
+            - **ĐẢO**: Hoán vị số (ví dụ 12 ↔ 21)
+            
+            ### ⚠️ QUY TẮC GHÉP CẶP:
+            - ✅ Ưu tiên: 1 ổn định + 1 hồi, 1 nhảy + 1 ổn định
+            - ❌ CẤM: Số chập (11, 22, 33...)
+            - ❌ Tránh: 2 số đều nóng, 2 số đều nguy hiểm, 2 số đều yếu
+            """)
+    
+    # ============ TAB 4: CONFIGURATION ============
+    with tab4:
+        st.subheader("⚙️ CẤU HÌNH AI LOTOBET")
         
-        with col3:
-            avoid_recent = st.slider(
-                "Tránh cặp trùng (số kỳ)",
-                1, 15, current_config.get('avoid_recent_pairs', 5), 1
+        st.markdown("### 🎯 THIẾT LẬP THAM SỐ")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            min_draws = st.slider(
+                "Số kỳ tối thiểu để phân tích",
+                5, 30, ai.config.get('min_draws', 15), 1,
+                help="Số lượng kỳ tối thiểu cần có để AI phân tích"
             )
             
             min_confidence = st.slider(
                 "Độ tin cậy tối thiểu (%)",
-                45, 85, current_config.get('min_confidence', 65), 5
+                50, 80, ai.config.get('min_confidence', 60), 5,
+                help="Cặp số phải đạt độ tin cậy này mới được đề xuất"
             )
             
-            max_gap = st.slider(
-                "Khoảng cách tối đa ưu tiên",
-                2, 8, current_config.get('max_consecutive_gap', 3), 1
+            avoid_recent = st.slider(
+                "Tránh số mới xuất hiện (kỳ)",
+                1, 5, ai.config.get('avoid_recent_appearance', 2), 1,
+                help="Số vừa xuất hiện trong N kỳ gần sẽ bị giảm trọng số"
             )
         
-        with col4:
-            avoid_same = st.checkbox(
-                "Tự động loại bỏ số chập",
-                value=current_config.get('avoid_same_digits', True)
+        with col2:
+            cold_threshold = st.slider(
+                "Ngưỡng số lạnh (kỳ)",
+                5, 15, ai.config.get('cold_threshold', 7), 1,
+                help="Số không xuất hiện từ N kỳ trở lên được coi là lạnh"
             )
             
-            prefer_complementary = st.checkbox(
-                "Ưu tiên số bổ trợ",
-                value=current_config.get('prefer_complementary', True)
+            max_hot_duration = st.slider(
+                "Thời gian nóng tối đa (kỳ)",
+                2, 5, ai.config.get('max_hot_duration', 3), 1,
+                help="Số nóng liên tiếp N kỳ sẽ bị coi là nguy hiểm"
             )
             
-            recent_weight = st.slider(
-                "Trọng số dữ liệu gần",
-                0.4, 0.9, current_config.get('recent_weight', 0.65), 0.05
+            prefer_gap = st.slider(
+                "Khoảng cách ưu tiên (kỳ)",
+                3, 10, ai.config.get('prefer_gap_period', 5), 1,
+                help="Khoảng cách lý tưởng giữa các lần xuất hiện"
             )
         
-        if st.button("💾 Lưu cấu hình AI", type="primary", use_container_width=True):
-            ai.config['algorithm_weights'] = {
-                'frequency_based': freq_weight,
-                'gap_analysis': gap_weight,
-                'hot_cold_mix': hotcold_weight,
-                'pattern_based': pattern_weight,
-                'position_based': position_weight,
-                'trend_based': trend_weight
-            }
-            
-            ai.config['avoid_recent_pairs'] = avoid_recent
+        if st.button("💾 Lưu cấu hình", type="primary", use_container_width=True):
+            ai.config['min_draws'] = min_draws
             ai.config['min_confidence'] = min_confidence
-            ai.config['max_consecutive_gap'] = max_gap
-            ai.config['avoid_same_digits'] = avoid_same
-            ai.config['prefer_complementary'] = prefer_complementary
-            ai.config['recent_weight'] = recent_weight
+            ai.config['avoid_recent_appearance'] = avoid_recent
+            ai.config['cold_threshold'] = cold_threshold
+            ai.config['max_hot_duration'] = max_hot_duration
+            ai.config['prefer_gap_period'] = prefer_gap
             
-            try:
-                ai.save_config()
-                st.success("✅ Đã lưu cấu hình AI thành công!")
-                st.rerun()
-            except:
-                st.error("❌ Lỗi khi lưu cấu hình")
+            ai.save_config()
+            st.success("✅ Đã lưu cấu hình!")
+            st.rerun()
         
         st.divider()
         
-        st.subheader("🔄 QUẢN LÝ DỮ LIỆU")
+        st.markdown("### 📊 THÔNG TIN HỆ THỐNG")
         
-        col5, col6 = st.columns(2)
-        
-        with col5:
-            if st.button("🗑️ Xóa dữ liệu AI", use_container_width=True, type="secondary"):
-                for file in [AI_CONFIG_FILE, PAIR_HISTORY_FILE]:
-                    if os.path.exists(file):
-                        try:
-                            os.remove(file)
-                        except:
-                            pass
-                ai.reset_statistics()
-                st.success("✅ Đã xóa dữ liệu AI học tập")
-                st.rerun()
-        
-        with col6:
-            if st.button("📥 Xuất dữ liệu", use_container_width=True):
-                df = load_data()
-                if not df.empty:
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📄 Tải file CSV",
-                        data=csv,
-                        file_name=f"numcore_master_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                else:
-                    st.warning("Không có dữ liệu để xuất")
-        
-        st.divider()
-        st.markdown("### ℹ️ THÔNG TIN ỨNG DỤNG")
+        df = load_data()
         
         info_cols = st.columns(3)
         with info_cols[0]:
-            df_count = len(load_data())
-            st.metric("Dữ liệu hiện có", f"{df_count} kỳ")
+            st.metric("Dữ liệu hiện có", f"{len(df)} kỳ")
         
         with info_cols[1]:
-            st.metric("Phiên bản AI", "Master v10.0")
+            st.metric("Phiên bản AI", "Lotobet v2.0")
         
         with info_cols[2]:
-            st.metric("Trạng thái", "✅ Hoạt động")
+            st.metric("Trạng thái", "✅ Đang hoạt động")
         
-        st.caption("NUMCORE AI MASTER - Tối ưu cho trò chơi 2 số 5 tính | Tự động loại bỏ số chập | Dự đoán chính xác cao")
+        st.caption("""
+        **AI 2 TINH LOTOBET - BẢN CHUẨN v2**  
+        • Loại bỏ số chập tự động  
+        • Logic KHÔNG ĐÁNH khi cần  
+        • Phân tích số đơn trước khi ghép  
+        • Tối đa 1-2 cặp đề xuất  
+        """)
 
 # ================= RUN APP =================
 if __name__ == "__main__":
