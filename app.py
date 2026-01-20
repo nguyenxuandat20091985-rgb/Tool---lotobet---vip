@@ -4,11 +4,7 @@ from collections import Counter
 from datetime import datetime
 import os
 
-# ================== CONFIG ==================
-st.set_page_config(
-    page_title="NUMCORE AI v6.6 – 2 TINH",
-    layout="centered"
-)
+st.set_page_config(page_title="NUMCORE AI v6.6 – 2 TÍNH", layout="centered")
 
 DATA_FILE = "data.csv"
 
@@ -18,102 +14,100 @@ def load_data():
         return pd.read_csv(DATA_FILE)
     return pd.DataFrame(columns=["time", "numbers"])
 
-def save_number(num):
+def save_data(rows):
     df = load_data()
-    df.loc[len(df)] = {
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "numbers": str(num)
-    }
+    df = pd.concat([df, rows], ignore_index=True)
     df.to_csv(DATA_FILE, index=False)
 
-# ================== AI CORE ==================
-def split_digits(df):
+# ================== ANALYSIS ==================
+def split_digits(data):
     digits = []
-    for n in df["numbers"]:
-        s = str(n).zfill(5)
-        digits.extend(list(s))
+    for n in data:
+        digits.extend(list(n))
     return digits
 
-def ai_frequency(digits):
-    c = Counter(digits)
-    return sorted(c.items(), key=lambda x: x[1], reverse=True)
+def analyze(data):
+    digits = split_digits(data)
+    freq = Counter(digits)
 
-def ai_cycle_filter(df, digit, lookback=25):
-    recent = df.tail(lookback)["numbers"].astype(str)
-    count = sum(digit in x for x in recent)
-    return count <= lookback * 0.4  # không quá nóng
+    hot = [d for d, c in freq.items() if c >= max(freq.values()) * 0.8]
+    cold = [d for d in "0123456789" if d not in freq]
 
-def ai_select_centers(df):
-    digits = split_digits(df)
-    freq = ai_frequency(digits)
+    last_seen = {}
+    for i, n in enumerate(reversed(data)):
+        for d in n:
+            if d not in last_seen:
+                last_seen[d] = i + 1
 
-    stable = []
-    for d, _ in freq:
-        if ai_cycle_filter(df, d):
-            stable.append(d)
-        if len(stable) >= 6:
-            break
+    bias = [d for d, v in last_seen.items() if v <= 3]
 
-    A = stable[:2]
-    B = stable[2:4]
-    return A, B
+    core = list(set(hot) & set(bias))
+    core = core[:2]
 
-def ai_strategy(A, B):
-    # chọn 2 số có khoảng cách & khác nhóm
-    if len(A) >= 2:
-        return [A[0], B[0]] if len(B) > 0 else A[:2]
-    return A + B
+    confidence = len(core)
+
+    return {
+        "freq": freq,
+        "hot": hot,
+        "cold": cold,
+        "bias": bias,
+        "core": core,
+        "confidence": confidence
+    }
 
 # ================== UI ==================
-st.title("🎯 NUMCORE AI v6.6 – 2 TINH")
-st.caption("Ưu tiên hiệu quả – Không nhiễu – Đánh được")
+st.title("NUMCORE AI v6.6 – 2 TÍNH")
+st.caption("Ưu tiên an toàn – Không ảo – Không gỡ")
 
 tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
 
-# ---------- TAB 1 ----------
 with tab1:
     st.subheader("Nhập kết quả (5 số)")
-    nums = st.text_area(
-        "Nhập nhiều kỳ – mỗi dòng 1 kết quả",
-        placeholder="Ví dụ:\n30945\n69763\n91573",
-        height=150
-    )
-
+    raw = st.text_area("Nhập nhiều kỳ – mỗi dòng 1 kết quả", height=150)
     if st.button("Lưu dữ liệu"):
-        lines = [x.strip() for x in nums.splitlines() if x.strip().isdigit()]
-        for l in lines:
-            if len(l) == 5:
-                save_number(l)
-        st.success(f"Đã lưu {len(lines)} kỳ")
+        rows = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.isdigit() and len(line) == 5:
+                rows.append({
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "numbers": line
+                })
+        if rows:
+            save_data(pd.DataFrame(rows))
+            st.success(f"Đã lưu {len(rows)} kỳ")
+        else:
+            st.warning("Không có dữ liệu hợp lệ")
 
     df = load_data()
     st.subheader("Dữ liệu gần nhất")
     st.dataframe(df.tail(20), use_container_width=True)
 
-# ---------- TAB 2 ----------
 with tab2:
     df = load_data()
-
-    if len(df) < 10:
-        st.warning("Cần ít nhất 10 kỳ để AI phân tích chuẩn")
+    if len(df) < 20:
+        st.warning("Dữ liệu quá ít – KHÔNG NÊN ĐÁNH")
     else:
-        A, B = ai_select_centers(df)
-        strategy = ai_strategy(A, B)
+        result = analyze(df["numbers"].tolist())
 
         st.subheader("🎯 SỐ TRUNG TÂM (AI)")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Tổ hợp A", "".join(A))
-        with col2:
-            st.metric("Tổ hợp B", "".join(B))
+        if result["core"]:
+            if len(result["core"]) >= 1:
+                st.metric("Tổ hợp A", result["core"][0])
+            if len(result["core"]) >= 2:
+                st.metric("Tổ hợp B", result["core"][1])
+        else:
+            st.error("Không có số trung tâm đủ tin cậy")
 
-        st.subheader("🧠 SỐ CHIẾN LƯỢC (ĐÁNH)")
-        st.success(" – ".join(strategy))
+        st.subheader("🧠 SỐ CHIẾN LƯỢC")
+        if result["confidence"] >= 2:
+            st.success("Có thể quan sát – KHÔNG CAM KẾT")
+            st.write("Nhóm số:", result["core"])
+        else:
+            st.error("KHÔNG ĐÁNH – CẦU NHIỄU")
 
         st.subheader("📊 Thống kê nhanh")
-        digits = split_digits(df)
-        freq = Counter(digits)
-        stat_df = pd.DataFrame(freq.items(), columns=["Số", "Tần suất"]).sort_values(
-            "Tần suất", ascending=False
-        )
-        st.dataframe(stat_df, use_container_width=True)
+        freq_df = pd.DataFrame(result["freq"].items(), columns=["Số", "Tần suất"])
+        st.dataframe(freq_df.sort_values("Tần suất", ascending=False), use_container_width=True)
+
+st.caption("⚠️ Cảnh báo: Tool chỉ hỗ trợ phân tích – không đảm bảo lợi nhuận.")
