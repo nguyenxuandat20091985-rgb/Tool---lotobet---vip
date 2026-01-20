@@ -4,7 +4,6 @@ from collections import Counter
 from itertools import combinations
 from datetime import datetime
 import os
-import random
 
 # ================= CONFIG =================
 st.set_page_config(
@@ -20,10 +19,6 @@ def load_data():
         return pd.DataFrame(columns=["time", "numbers"])
 
     df = pd.read_csv(DATA_FILE)
-
-    if "numbers" not in df.columns:
-        df["numbers"] = df.iloc[:, -1].astype(str)
-
     df["numbers"] = df["numbers"].astype(str)
     return df[["time", "numbers"]]
 
@@ -39,35 +34,55 @@ def save_many(values):
     if rows:
         df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
         df.to_csv(DATA_FILE, index=False)
+
     return len(rows)
 
 # ================= CORE =================
 def parse_numbers(v):
     return [int(x) for x in str(v) if x.isdigit()][:5]
 
-def unique(nums):
+def flatten(df):
     out = []
-    for n in nums:
-        if n not in out:
-            out.append(n)
-    return out[:5]
+    for v in df["numbers"]:
+        out.extend(parse_numbers(v))
+    return out
 
-def build_groups(nums):
-    if len(nums) < 3:
+def recent_weight(df, window=20):
+    recent = df.tail(window)
+    nums = flatten(recent)
+    return Counter(nums)
+
+def build_groups(top_nums):
+    if len(top_nums) < 3:
         return []
-    return list(combinations(nums, 3))[:2]
+    return list(combinations(top_nums[:5], 3))[:2]
 
-def ai_pick(nums):
-    pool = [n for n in range(10) if n not in nums]
-    if len(pool) < 2:
+def ai_smart_pick(freq_all, freq_recent):
+    score = {}
+
+    for n in range(10):
+        f_all = freq_all.get(n, 0)
+        f_recent = freq_recent.get(n, 0)
+
+        # loại số quá nóng hoặc chết
+        if f_all == 0 or f_recent == 0:
+            continue
+
+        # công thức điểm AI
+        score[n] = (f_recent * 2) - (f_all * 0.5)
+
+    # sắp xếp theo điểm
+    ranked = sorted(score.items(), key=lambda x: x[1], reverse=True)
+
+    picks = [str(n) for n, _ in ranked[:2]]
+    if len(picks) < 2:
         return "--"
-    a = random.choice(pool)
-    b = random.choice([x for x in pool if x != a])
-    return f"{a}{b}"
+
+    return "".join(picks)
 
 # ================= UI =================
 st.title("🔷 NUMCORE")
-st.caption("Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu")
+st.caption("AI phân tích cầu – Không đoán bừa – Ưu tiên sống")
 
 tab1, tab2 = st.tabs([
     "📥 Quản lý dữ liệu",
@@ -76,66 +91,60 @@ tab1, tab2 = st.tabs([
 
 # ============ TAB 1 ============
 with tab1:
-    st.subheader("📥 Nhập nhiều kỳ cùng lúc")
+    st.subheader("📥 Nhập nhiều kỳ")
 
     raw = st.text_area(
         "Mỗi dòng = 1 kỳ (5 số)",
-        height=160,
-        placeholder="Ví dụ:\n17723\n55324\n95060"
+        height=160
     )
 
     if st.button("💾 Lưu dữ liệu"):
-        lines = [x.strip() for x in raw.splitlines()]
-        saved = save_many(lines)
-
-        if saved > 0:
-            st.success(f"Đã lưu {saved} kỳ hợp lệ")
+        saved = save_many([x.strip() for x in raw.splitlines()])
+        if saved:
+            st.success(f"Đã lưu {saved} kỳ")
         else:
             st.error("Không có dữ liệu hợp lệ")
 
     df = load_data()
     if not df.empty:
-        st.subheader("📄 Dữ liệu gần nhất")
         st.dataframe(df.tail(10), use_container_width=True)
 
 # ============ TAB 2 ============
 with tab2:
     df = load_data()
 
-    all_nums = []
-    for v in df["numbers"]:
-        try:
-            all_nums.extend(parse_numbers(v))
-        except:
-            pass
-
-    if len(all_nums) < 20:
-        st.warning("Chưa đủ dữ liệu để phân tích")
+    if len(df) < 6:
+        st.warning("Chưa đủ dữ liệu phân tích")
     else:
-        freq = Counter(all_nums)
-        top = unique([n for n, _ in freq.most_common(5)])
+        all_nums = flatten(df)
+        freq_all = Counter(all_nums)
+        freq_recent = recent_weight(df)
+
+        top = [n for n, _ in freq_all.most_common(6)]
 
         st.subheader("🎯 SỐ TRUNG TÂM")
-        g = build_groups(top)
+        groups = build_groups(top)
 
         c1, c2 = st.columns(2)
-        if len(g) > 0:
-            c1.metric("Tổ hợp A", "".join(map(str, g[0])))
-        if len(g) > 1:
-            c2.metric("Tổ hợp B", "".join(map(str, g[1])))
+        if len(groups) > 0:
+            c1.metric("Trung tâm A", "".join(map(str, groups[0])))
+        if len(groups) > 1:
+            c2.metric("Trung tâm B", "".join(map(str, groups[1])))
 
         st.divider()
 
-        st.subheader("🧠 SỐ CHIẾN LƯỢC")
-        st.metric("AI chọn lọc", ai_pick(top))
+        st.subheader("🧠 SỐ CHIẾN LƯỢC (AI)")
+        ai_num = ai_smart_pick(freq_all, freq_recent)
+
+        if ai_num == "--":
+            st.error("AI từ chối đánh – Cầu xấu")
+        else:
+            st.success(f"AI đề xuất: **{ai_num}**")
 
         st.divider()
 
-        total = len(df)
-        rate = min(60, 45 + total // 40)
+        st.subheader("📊 THỐNG KÊ")
+        st.write(f"• Số kỳ phân tích: **{len(df)}**")
+        st.write("• AI ưu tiên số đang lên, né số bão hòa")
 
-        st.subheader("📊 THỐNG KÊ NHANH")
-        st.write(f"• Số kỳ đã phân tích: **{total}**")
-        st.write(f"• Tỉ lệ tham khảo: **≈ {rate}%**")
-
-st.caption("NUMCORE v6.6 – Ổn định – Không số chập – Không crash")
+st.caption("NUMCORE v6.6 – AI nâng cấp – Không random – Không số chập")
