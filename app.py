@@ -1,141 +1,144 @@
 import streamlit as st
 import pandas as pd
 from collections import Counter
-from itertools import combinations
 from datetime import datetime
 import os
-import random
 
-# ================= CONFIG =================
+# ================== CONFIG ==================
 st.set_page_config(
-    page_title="NUMCORE",
+    page_title="NUMCORE AI",
+    page_icon="🎯",
     layout="centered"
 )
 
 DATA_FILE = "data.csv"
 
-# ================= DATA =================
+# ================== STYLE ==================
+st.markdown("""
+<style>
+.big-title {
+    font-size:32px;
+    font-weight:700;
+}
+.sub {
+    color:#666;
+}
+.card {
+    padding:20px;
+    border-radius:12px;
+    background:#f8f9fa;
+    margin-bottom:15px;
+}
+.ai {
+    background:#e8f5e9;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ================== DATA ==================
 def load_data():
-    if not os.path.exists(DATA_FILE):
-        return pd.DataFrame(columns=["time", "numbers"])
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    return pd.DataFrame(columns=["time", "numbers"])
 
-    df = pd.read_csv(DATA_FILE)
-
-    if "numbers" not in df.columns:
-        df["numbers"] = df.iloc[:, -1].astype(str)
-
-    df["numbers"] = df["numbers"].astype(str)
-    return df[["time", "numbers"]]
-
-def save_many(values):
+def save_numbers(list_numbers):
     df = load_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new = pd.DataFrame([{"time": now, "numbers": n} for n in list_numbers])
+    df = pd.concat([df, new], ignore_index=True)
+    df.to_csv(DATA_FILE, index=False)
 
-    rows = []
-    for v in values:
-        if v.isdigit() and len(v) == 5:
-            rows.append({"time": now, "numbers": v})
+# ================== AI CORE ==================
+def ai_center_numbers(df):
+    all_digits = []
+    recent_digits = []
 
-    if rows:
-        df = pd.concat([df, pd.DataFrame(rows)], ignore_index=True)
-        df.to_csv(DATA_FILE, index=False)
-    return len(rows)
+    # lấy toàn bộ số
+    for n in df["numbers"]:
+        all_digits.extend(list(n))
 
-# ================= CORE =================
-def parse_numbers(v):
-    return [int(x) for x in str(v) if x.isdigit()][:5]
+    # 15 kỳ gần nhất
+    for n in df.tail(15)["numbers"]:
+        recent_digits.extend(list(n))
 
-def unique(nums):
-    out = []
-    for n in nums:
-        if n not in out:
-            out.append(n)
-    return out[:5]
+    freq_all = Counter(all_digits)
+    freq_recent = Counter(recent_digits)
 
-def build_groups(nums):
-    if len(nums) < 3:
-        return []
-    return list(combinations(nums, 3))[:2]
+    score = {}
+    for d in "0123456789":
+        score[d] = (
+            freq_all.get(d, 0) * 0.3 +
+            freq_recent.get(d, 0) * 0.4
+        )
 
-def ai_pick(nums):
-    pool = [n for n in range(10) if n not in nums]
-    if len(pool) < 2:
-        return "--"
-    a = random.choice(pool)
-    b = random.choice([x for x in pool if x != a])
-    return f"{a}{b}"
+    # loại số vừa về liên tiếp
+    last = df.tail(2)["numbers"].tolist()
+    bad = set(last[0]) & set(last[1]) if len(last) == 2 else set()
 
-# ================= UI =================
-st.title("🔷 NUMCORE")
-st.caption("Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu")
+    for b in bad:
+        score[b] *= 0.3
 
-tab1, tab2 = st.tabs([
-    "📥 Quản lý dữ liệu",
-    "🎯 Phân tích & Dự đoán"
-])
+    # chọn 5 số mạnh nhất
+    top = sorted(score.items(), key=lambda x: x[1], reverse=True)[:5]
+    return [x[0] for x in top]
 
-# ============ TAB 1 ============
+# ================== UI ==================
+st.markdown('<div class="big-title">🎯 NUMCORE AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub">Phân tích chuỗi số – Ưu tiên hiệu quả – Không nhiễu</div>', unsafe_allow_html=True)
+st.divider()
+
+tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
+
+# ========== TAB 1 ==========
 with tab1:
-    st.subheader("📥 Nhập nhiều kỳ cùng lúc")
-
-    raw = st.text_area(
-        "Mỗi dòng = 1 kỳ (5 số)",
-        height=160,
-        placeholder="Ví dụ:\n17723\n55324\n95060"
+    st.markdown("### Nhập nhiều kỳ (mỗi dòng 1 kết quả – 5 số)")
+    text = st.text_area(
+        "Ví dụ:\n17723\n95060\n97508",
+        height=150
     )
 
     if st.button("💾 Lưu dữ liệu"):
-        lines = [x.strip() for x in raw.splitlines()]
-        saved = save_many(lines)
-
-        if saved > 0:
-            st.success(f"Đã lưu {saved} kỳ hợp lệ")
+        rows = []
+        for line in text.splitlines():
+            line = line.strip()
+            if line.isdigit() and len(line) == 5:
+                rows.append(line)
+        if rows:
+            save_numbers(rows)
+            st.success(f"Đã lưu {len(rows)} kỳ")
         else:
             st.error("Không có dữ liệu hợp lệ")
 
     df = load_data()
     if not df.empty:
-        st.subheader("📄 Dữ liệu gần nhất")
-        st.dataframe(df.tail(10), use_container_width=True)
+        st.markdown("### Dữ liệu đã lưu")
+        st.dataframe(df.tail(20), use_container_width=True)
 
-# ============ TAB 2 ============
+# ========== TAB 2 ==========
 with tab2:
     df = load_data()
-
-    all_nums = []
-    for v in df["numbers"]:
-        try:
-            all_nums.extend(parse_numbers(v))
-        except:
-            pass
-
-    if len(all_nums) < 20:
-        st.warning("Chưa đủ dữ liệu để phân tích")
+    if len(df) < 10:
+        st.warning("Cần tối thiểu 10 kỳ để AI phân tích")
     else:
-        freq = Counter(all_nums)
-        top = unique([n for n, _ in freq.most_common(5)])
+        ai_nums = ai_center_numbers(df)
 
-        st.subheader("🎯 SỐ TRUNG TÂM")
-        g = build_groups(top)
+        st.markdown('<div class="card ai">', unsafe_allow_html=True)
+        st.markdown("### 🧠 AI TRUNG TÂM")
+        st.markdown(f"**Số AI chọn:** {' – '.join(ai_nums)}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        c1, c2 = st.columns(2)
-        if len(g) > 0:
-            c1.metric("Tổ hợp A", "".join(map(str, g[0])))
-        if len(g) > 1:
-            c2.metric("Tổ hợp B", "".join(map(str, g[1])))
+        a = ai_nums[0] + ai_nums[1] + ai_nums[2]
+        b = ai_nums[1] + ai_nums[3] + ai_nums[4]
 
-        st.divider()
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown("### 🎯 Tổ hợp đề xuất")
+        st.markdown(f"- **Nhánh A:** {a}")
+        st.markdown(f"- **Nhánh B:** {b}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("🧠 SỐ CHIẾN LƯỢC")
-        st.metric("AI chọn lọc", ai_pick(top))
+        last_digits = Counter("".join(df.tail(20)["numbers"]))
+        hot = last_digits.most_common(3)
 
-        st.divider()
-
-        total = len(df)
-        rate = min(60, 45 + total // 40)
-
-        st.subheader("📊 THỐNG KÊ NHANH")
-        st.write(f"• Số kỳ đã phân tích: **{total}**")
-        st.write(f"• Tỉ lệ tham khảo: **≈ {rate}%**")
-
-st.caption("NUMCORE v6.6 – Ổn định – Không số chập – Không crash")
+        st.markdown("### 📊 Số đang nóng")
+        for d, c in hot:
+            st.write(f"Số {d}: {c} lần / 20 kỳ")
