@@ -6,7 +6,7 @@ import os
 
 # ================== CONFIG ==================
 st.set_page_config(
-    page_title="NUMCORE AI – 2 TINH",
+    page_title="NUMCORE AI v6.6 – 2 TINH",
     layout="centered"
 )
 
@@ -20,82 +20,100 @@ def load_data():
 
 def save_number(num):
     df = load_data()
-    df.loc[len(df)] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), num]
+    df.loc[len(df)] = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "numbers": str(num)
+    }
     df.to_csv(DATA_FILE, index=False)
 
 # ================== AI CORE ==================
 def split_digits(df):
-    all_digits = []
+    digits = []
     for n in df["numbers"]:
-        all_digits.extend(list(str(n)))
-    return all_digits
+        s = str(n).zfill(5)
+        digits.extend(list(s))
+    return digits
 
-def ai_core(df):
+def ai_frequency(digits):
+    c = Counter(digits)
+    return sorted(c.items(), key=lambda x: x[1], reverse=True)
+
+def ai_cycle_filter(df, digit, lookback=25):
+    recent = df.tail(lookback)["numbers"].astype(str)
+    count = sum(digit in x for x in recent)
+    return count <= lookback * 0.4  # không quá nóng
+
+def ai_select_centers(df):
     digits = split_digits(df)
-    freq = Counter(digits)
+    freq = ai_frequency(digits)
 
-    # Lấy 6 số mạnh nhất
-    top = freq.most_common(6)
-    nums = [int(n[0]) for n in top]
+    stable = []
+    for d, _ in freq:
+        if ai_cycle_filter(df, d):
+            stable.append(d)
+        if len(stable) >= 6:
+            break
 
-    # Trung tâm A – B (2 cụm 2 số)
-    center_a = f"{nums[0]}{nums[1]}"
-    center_b = f"{nums[2]}{nums[3]}"
+    A = stable[:2]
+    B = stable[2:4]
+    return A, B
 
-    # AI chiến lược: 2 số mạnh + ổn định
-    strategy = sorted([nums[0], nums[2]])
-
-    return center_a, center_b, strategy, freq
+def ai_strategy(A, B):
+    # chọn 2 số có khoảng cách & khác nhóm
+    if len(A) >= 2:
+        return [A[0], B[0]] if len(B) > 0 else A[:2]
+    return A + B
 
 # ================== UI ==================
-st.title("🎯 NUMCORE AI – 2 TINH")
+st.title("🎯 NUMCORE AI v6.6 – 2 TINH")
 st.caption("Ưu tiên hiệu quả – Không nhiễu – Đánh được")
 
 tab1, tab2 = st.tabs(["📥 Quản lý dữ liệu", "🧠 Phân tích & Dự đoán"])
 
-# ================== TAB 1 ==================
+# ---------- TAB 1 ----------
 with tab1:
     st.subheader("Nhập kết quả (5 số)")
-
-    if "input_num" not in st.session_state:
-        st.session_state.input_num = ""
-
-    num = st.text_input(
-        "Ví dụ: 30945",
-        max_chars=5,
-        key="input_num"
+    nums = st.text_area(
+        "Nhập nhiều kỳ – mỗi dòng 1 kết quả",
+        placeholder="Ví dụ:\n30945\n69763\n91573",
+        height=150
     )
 
-    if st.button("Lưu"):
-        if num.isdigit() and len(num) == 5:
-            save_number(num)
-            st.session_state.input_num = ""
-            st.success("Đã lưu 1 kỳ mới ✅")
-            st.rerun()
-        else:
-            st.error("Sai định dạng – cần đúng 5 số")
+    if st.button("Lưu dữ liệu"):
+        lines = [x.strip() for x in nums.splitlines() if x.strip().isdigit()]
+        for l in lines:
+            if len(l) == 5:
+                save_number(l)
+        st.success(f"Đã lưu {len(lines)} kỳ")
 
     df = load_data()
     st.subheader("Dữ liệu gần nhất")
     st.dataframe(df.tail(20), use_container_width=True)
 
-# ================== TAB 2 ==================
+# ---------- TAB 2 ----------
 with tab2:
     df = load_data()
 
-    if len(df) < 20:
-        st.warning("Cần ít nhất 20 kỳ để AI phân tích chính xác")
+    if len(df) < 10:
+        st.warning("Cần ít nhất 10 kỳ để AI phân tích chuẩn")
     else:
-        center_a, center_b, strategy, freq = ai_core(df)
+        A, B = ai_select_centers(df)
+        strategy = ai_strategy(A, B)
 
         st.subheader("🎯 SỐ TRUNG TÂM (AI)")
         col1, col2 = st.columns(2)
-        col1.metric("Tổ hợp A", center_a)
-        col2.metric("Tổ hợp B", center_b)
+        with col1:
+            st.metric("Tổ hợp A", "".join(A))
+        with col2:
+            st.metric("Tổ hợp B", "".join(B))
 
         st.subheader("🧠 SỐ CHIẾN LƯỢC (ĐÁNH)")
-        st.success(f"{strategy[0]}  –  {strategy[1]}")
+        st.success(" – ".join(strategy))
 
         st.subheader("📊 Thống kê nhanh")
-        stat_df = pd.DataFrame(freq.most_common(), columns=["Số", "Tần suất"])
+        digits = split_digits(df)
+        freq = Counter(digits)
+        stat_df = pd.DataFrame(freq.items(), columns=["Số", "Tần suất"]).sort_values(
+            "Tần suất", ascending=False
+        )
         st.dataframe(stat_df, use_container_width=True)
