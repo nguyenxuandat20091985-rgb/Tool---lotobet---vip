@@ -9,7 +9,6 @@ import random
 import json
 from pathlib import Path
 import warnings
-from scipy import stats as scipy_stats
 warnings.filterwarnings('ignore')
 
 # ================= CONFIG =================
@@ -88,18 +87,24 @@ class TwoNumberAI:
     
     def update_pair_statistics(self, numbers_history):
         """Update pair frequency statistics"""
-        new_pairs = self.extract_pairs_from_history(numbers_history[-10:])  # Last 10 draws
+        if len(numbers_history) == 0:
+            return
+            
+        # Use last 10 draws or all if less than 10
+        recent_history = numbers_history[-10:] if len(numbers_history) >= 10 else numbers_history
+        new_pairs = self.extract_pairs_from_history(recent_history)
         
         for pair in new_pairs:
             self.pair_frequency[pair] += 1
         
         # Update position-based pairs
-        for numbers in numbers_history[-10:]:
+        for numbers in recent_history:
             if len(numbers) == 5:
                 for i in range(5):
                     for j in range(i+1, 5):
                         pos_pair = (i, j, numbers[i], numbers[j])
-                        self.position_pairs[(numbers[i], numbers[j])][pos_pair] += 1
+                        key = (numbers[i], numbers[j])
+                        self.position_pairs[key][pos_pair] += 1
         
         self.save_pair_history()
     
@@ -111,6 +116,9 @@ class TwoNumberAI:
             return []
         
         all_pairs = self.extract_pairs_from_history(numbers_history)
+        if not all_pairs:
+            return []
+            
         pair_counter = Counter(all_pairs)
         
         # Get most frequent pairs
@@ -155,6 +163,9 @@ class TwoNumberAI:
                     for j in range(i+1, 5):
                         position_pairs.append(((i, numbers[i]), (j, numbers[j])))
         
+        if not position_pairs:
+            return []
+            
         position_pair_counter = Counter(position_pairs)
         
         # Score pairs based on position patterns
@@ -164,8 +175,10 @@ class TwoNumberAI:
             freq = position_pair_counter[((pos1, num1), (pos2, num2))]
             
             # Calculate position strength
-            pos1_strength = position_stats[pos1][num1] / max(1, sum(position_stats[pos1].values()))
-            pos2_strength = position_stats[pos2][num2] / max(1, sum(position_stats[pos2].values()))
+            total_pos1 = max(1, sum(position_stats[pos1].values()))
+            total_pos2 = max(1, sum(position_stats[pos2].values()))
+            pos1_strength = position_stats[pos1][num1] / total_pos1
+            pos2_strength = position_stats[pos2][num2] / total_pos2
             
             score = freq * (pos1_strength + pos2_strength) * 0.5
             pair_scores[pair] = score
@@ -190,8 +203,10 @@ class TwoNumberAI:
             
             if len(recent_counts) >= 2:
                 # Calculate trend (increasing/decreasing)
-                trend = (recent_counts[-1] - recent_counts[0]) / max(1, sum(recent_counts))
-                trends[num] = trend
+                total = sum(recent_counts)
+                if total > 0:
+                    trend = (recent_counts[-1] - recent_counts[0]) / total
+                    trends[num] = trend
         
         # Find pairs with complementary trends
         pair_scores = {}
@@ -244,8 +259,14 @@ class TwoNumberAI:
         
         # Calculate probabilities using statistical methods
         all_numbers = [num for nums in numbers_history for num in nums]
+        if not all_numbers:
+            return []
+            
         number_freq = Counter(all_numbers)
         total = len(all_numbers)
+        
+        if total == 0:
+            return []
         
         # Calculate expected probability of pairs
         pair_probabilities = {}
@@ -261,10 +282,8 @@ class TwoNumberAI:
                                   if num1 in nums and num2 in nums)
                 
                 expected = prob_num1 * prob_num2 * len(numbers_history)
-                actual = cooccurrences
-                
                 if expected > 0:
-                    ratio = actual / expected
+                    ratio = cooccurrences / expected
                     # High ratio means they appear together more than expected
                     pair_probabilities[(num1, num2)] = ratio
         
@@ -286,7 +305,7 @@ class TwoNumberAI:
                 # Feature 1: Co-occurrence frequency
                 cooccur = sum(1 for nums in numbers_history 
                             if num1 in nums and num2 in nums)
-                features.append(cooccur / len(numbers_history))
+                features.append(cooccur / max(1, len(numbers_history)))
                 
                 # Feature 2: Recent momentum
                 recent_cooccur = sum(1 for nums in numbers_history[-5:] 
@@ -316,14 +335,37 @@ class TwoNumberAI:
             return []
         
         # Get results from all algorithms
-        algo_results = {
-            'frequency': self.algorithm_frequency_based(numbers_history, hot_numbers),
-            'position': self.algorithm_position_based(numbers_history),
-            'trend': self.algorithm_trend_based(numbers_history),
-            'pattern': self.algorithm_pattern_based(numbers_history),
-            'statistical': self.algorithm_statistical(numbers_history),
-            'neural': self.algorithm_neural_inspired(numbers_history, hot_numbers)
-        }
+        algo_results = {}
+        
+        try:
+            algo_results['frequency'] = self.algorithm_frequency_based(numbers_history, hot_numbers)
+        except:
+            algo_results['frequency'] = []
+        
+        try:
+            algo_results['position'] = self.algorithm_position_based(numbers_history)
+        except:
+            algo_results['position'] = []
+        
+        try:
+            algo_results['trend'] = self.algorithm_trend_based(numbers_history)
+        except:
+            algo_results['trend'] = []
+        
+        try:
+            algo_results['pattern'] = self.algorithm_pattern_based(numbers_history)
+        except:
+            algo_results['pattern'] = []
+        
+        try:
+            algo_results['statistical'] = self.algorithm_statistical(numbers_history)
+        except:
+            algo_results['statistical'] = []
+        
+        try:
+            algo_results['neural'] = self.algorithm_neural_inspired(numbers_history, hot_numbers)
+        except:
+            algo_results['neural'] = []
         
         # Combine scores using weighted average
         combined_scores = defaultdict(float)
@@ -332,10 +374,11 @@ class TwoNumberAI:
         for algo_name, results in algo_results.items():
             weight = algo_weights.get(algo_name, 0.1)
             
-            for i, (pair, score) in enumerate(results):
-                # Normalize score based on ranking
-                normalized_score = (len(results) - i) / len(results)
-                combined_scores[pair] += normalized_score * weight
+            if results:
+                for i, (pair, score) in enumerate(results):
+                    # Normalize score based on ranking
+                    normalized_score = (len(results) - i) / len(results)
+                    combined_scores[pair] += normalized_score * weight
         
         # Apply recent appearance penalty
         recent_pairs = self.extract_pairs_from_history(numbers_history[-self.config['avoid_recent_pairs']:])
@@ -358,6 +401,9 @@ class TwoNumberAI:
         
         # Get combined predictions
         all_predictions = self.combine_algorithms(numbers_history, hot_numbers)
+        
+        if not all_predictions:
+            return [], {}
         
         # Calculate confidence scores
         predictions = []
@@ -405,11 +451,12 @@ class TwoNumberAI:
         for algo_name, method in algo_methods.items():
             try:
                 results = method(numbers_history, hot_numbers)
-                # Find this pair in results
-                for result_pair, score in results:
-                    if result_pair == pair:
-                        contributions[algo_name] = round(score, 3)
-                        break
+                if results:
+                    # Find this pair in results
+                    for result_pair, score in results:
+                        if result_pair == pair:
+                            contributions[algo_name] = round(score, 3)
+                            break
             except:
                 contributions[algo_name] = 0
         
@@ -432,27 +479,28 @@ class TwoNumberAI:
         
         for pair in top_pairs[:3]:
             details = confidence_details.get(pair, {})
+            confidence = details.get('confidence', 0)
             
-            if details['confidence'] >= 75:
+            if confidence >= 75:
                 strategies.append({
                     'pair': pair,
                     'strategy': "ĐẶT CƯỢC MẠNH",
-                    'reason': f"Độ tin cậy cao ({details['confidence']}%)",
-                    'algorithms': [k for k, v in details['algorithms'].items() if v > 0]
+                    'reason': f"Độ tin cậy cao ({confidence}%)",
+                    'confidence': confidence
                 })
-            elif details['confidence'] >= 60:
+            elif confidence >= 60:
                 strategies.append({
                     'pair': pair,
                     'strategy': "ĐẶT CƯỢC VỪA",
-                    'reason': f"Độ tin cậy trung bình ({details['confidence']}%)",
-                    'algorithms': [k for k, v in details['algorithms'].items() if v > 0]
+                    'reason': f"Độ tin cậy trung bình ({confidence}%)",
+                    'confidence': confidence
                 })
             else:
                 strategies.append({
                     'pair': pair,
                     'strategy': "THEO DÕI",
-                    'reason': f"Cần thêm dữ liệu ({details['confidence']}%)",
-                    'algorithms': [k for k, v in details['algorithms'].items() if v > 0]
+                    'reason': f"Cần thêm dữ liệu ({confidence}%)",
+                    'confidence': confidence
                 })
         
         return strategies
@@ -467,17 +515,15 @@ def load_data():
         df = pd.read_csv(DATA_FILE)
         
         # Ensure required columns
-        if "numbers" not in df.columns:
-            if len(df.columns) > 0:
-                df["numbers"] = df.iloc[:, -1].astype(str)
-            else:
-                df["numbers"] = ""
-        
-        if "time" not in df.columns:
-            df["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        if "source" not in df.columns:
-            df["source"] = "manual"
+        required_cols = ["time", "numbers", "source"]
+        for col in required_cols:
+            if col not in df.columns:
+                if col == "numbers" and len(df.columns) > 0:
+                    df["numbers"] = df.iloc[:, -1].astype(str)
+                elif col == "time":
+                    df["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                elif col == "source":
+                    df["source"] = "manual"
         
         df["numbers"] = df["numbers"].astype(str).str.strip()
         return df[["time", "numbers", "source"]]
@@ -509,8 +555,11 @@ def save_data(values, source="manual"):
         df = df.drop_duplicates(subset=['numbers'], keep='first')
         
         # Sort by time
-        df['time'] = pd.to_datetime(df['time'])
-        df = df.sort_values('time', ascending=True)
+        try:
+            df['time'] = pd.to_datetime(df['time'])
+            df = df.sort_values('time', ascending=True)
+        except:
+            pass
         
         df.to_csv(DATA_FILE, index=False)
     
@@ -658,7 +707,7 @@ def main():
             top_pairs, confidence_details = ai.predict_top_pairs(numbers_history, hot_numbers, num_pairs=10)
             
             if not top_pairs:
-                st.error("Không thể tạo dự đoán với dữ liệu hiện có")
+                st.info("Đang phân tích dữ liệu... Vui lòng thử lại sau")
                 return
             
             # Display top predictions
@@ -692,14 +741,6 @@ def main():
                         st.write(f"**Độ tin cậy:** {confidence}%")
                         st.write(f"**Xuất hiện gần đây:** {details.get('recent_appearances', 0)} lần")
                         st.write(f"**Tần suất lịch sử:** {details.get('historical_frequency', 0)} lần")
-                        
-                        # Algorithm contributions
-                        algo_info = details.get('algorithms', {})
-                        if algo_info:
-                            st.write("**Thuật toán hỗ trợ:**")
-                            for algo, score in algo_info.items():
-                                if score > 0:
-                                    st.write(f"- {algo}: {score}")
             
             st.divider()
             
@@ -708,80 +749,73 @@ def main():
             
             strategies = ai.generate_strategy_recommendations(top_pairs, confidence_details)
             
-            strategy_cols = st.columns(min(3, len(strategies)))
-            for idx, (strategy, col) in enumerate(zip(strategies[:3], strategy_cols)):
-                with col:
-                    pair_str = f"{strategy['pair'][0]}{strategy['pair'][1]}"
-                    
-                    if strategy['strategy'] == "ĐẶT CƯỢC MẠNH":
-                        st.success(f"**{pair_str}** - {strategy['strategy']}")
-                    elif strategy['strategy'] == "ĐẶT CƯỢC VỪA":
-                        st.info(f"**{pair_str}** - {strategy['strategy']}")
-                    else:
-                        st.warning(f"**{pair_str}** - {strategy['strategy']}")
-                    
-                    st.caption(f"{strategy['reason']}")
-                    if strategy['algorithms']:
-                        st.caption(f"Thuật toán: {', '.join(strategy['algorithms'])}")
+            if strategies:
+                strategy_cols = st.columns(min(3, len(strategies)))
+                for idx, (strategy, col) in enumerate(zip(strategies[:3], strategy_cols)):
+                    with col:
+                        pair_str = f"{strategy['pair'][0]}{strategy['pair'][1]}"
+                        
+                        if strategy['strategy'] == "ĐẶT CƯỢC MẠNH":
+                            st.success(f"**{pair_str}** - {strategy['strategy']}")
+                        elif strategy['strategy'] == "ĐẶT CƯỢC VỪA":
+                            st.info(f"**{pair_str}** - {strategy['strategy']}")
+                        else:
+                            st.warning(f"**{pair_str}** - {strategy['strategy']}")
+                        
+                        st.caption(f"{strategy['reason']}")
+            else:
+                st.info("Chưa có chiến lược đề xuất")
             
             st.divider()
             
             # Detailed analysis
             st.subheader("📊 PHÂN TÍCH CHI TIẾT CẶP SỐ")
             
-            selected_pair = st.selectbox(
-                "Chọn cặp số để phân tích chi tiết:",
-                options=[f"{p[0]}{p[1]}" for p in top_pairs],
-                index=0
-            )
-            
-            # Parse selected pair
-            if selected_pair and len(selected_pair) == 2:
-                pair_tuple = (int(selected_pair[0]), int(selected_pair[1]))
-                details = confidence_details.get(pair_tuple, {})
+            if top_pairs:
+                selected_pair = st.selectbox(
+                    "Chọn cặp số để phân tích chi tiết:",
+                    options=[f"{p[0]}{p[1]}" for p in top_pairs],
+                    index=0
+                )
                 
-                if details:
-                    col1, col2 = st.columns(2)
+                # Parse selected pair
+                if selected_pair and len(selected_pair) == 2:
+                    pair_tuple = (int(selected_pair[0]), int(selected_pair[1]))
+                    details = confidence_details.get(pair_tuple, {})
                     
-                    with col1:
-                        st.write("**📈 Thống kê cơ bản:**")
-                        st.write(f"- **Độ tin cậy:** {details['confidence']}%")
-                        st.write(f"- **Điểm số tổng:** {details['score']}")
-                        st.write(f"- **Xuất hiện gần đây (10 kỳ):** {details['recent_appearances']} lần")
-                        st.write(f"- **Tổng lần xuất hiện:** {details['historical_frequency']} lần")
+                    if details:
+                        col1, col2 = st.columns(2)
                         
-                        # Check against hot numbers
-                        hot_status = []
-                        for num in pair_tuple:
-                            if num in hot_numbers[:3]:
-                                hot_status.append(f"Số {num} là số nóng")
-                            elif num in hot_numbers:
-                                hot_status.append(f"Số {num} là số ấm")
-                            else:
-                                hot_status.append(f"Số {num} là số bình thường")
-                        
-                        st.write("**🔥 Trạng thái số:**")
-                        for status in hot_status:
-                            st.write(f"- {status}")
-                    
-                    with col2:
-                        st.write("**🤖 Phân tích thuật toán:**")
-                        algo_scores = details.get('algorithms', {})
-                        
-                        if algo_scores:
-                            # Create bar chart data
-                            algo_names = list(algo_scores.keys())
-                            algo_values = list(algo_scores.values())
+                        with col1:
+                            st.write("**📈 Thống kê cơ bản:**")
+                            st.write(f"- **Độ tin cậy:** {details['confidence']}%")
+                            st.write(f"- **Điểm số tổng:** {details['score']}")
+                            st.write(f"- **Xuất hiện gần đây (10 kỳ):** {details['recent_appearances']} lần")
+                            st.write(f"- **Tổng lần xuất hiện:** {details['historical_frequency']} lần")
                             
-                            if algo_values:
-                                max_val = max(algo_values)
-                                if max_val > 0:
-                                    # Display as progress bars
-                                    for algo, score in algo_scores.items():
-                                        if score > 0:
-                                            normalized = score / max_val
-                                            st.write(f"**{algo}:**")
-                                            st.progress(float(normalized), text=f"{score:.3f}")
+                            # Check against hot numbers
+                            hot_status = []
+                            for num in pair_tuple:
+                                if num in hot_numbers[:3]:
+                                    hot_status.append(f"Số {num} là số nóng")
+                                elif num in hot_numbers:
+                                    hot_status.append(f"Số {num} là số ấm")
+                                else:
+                                    hot_status.append(f"Số {num} là số bình thường")
+                            
+                            st.write("**🔥 Trạng thái số:**")
+                            for status in hot_status:
+                                st.write(f"- {status}")
+                        
+                        with col2:
+                            st.write("**🤖 Phân tích thuật toán:**")
+                            algo_scores = details.get('algorithms', {})
+                            
+                            if algo_scores:
+                                # Display algorithm scores
+                                for algo, score in algo_scores.items():
+                                    if score > 0:
+                                        st.write(f"**{algo}:** {score}")
             
             st.divider()
             
@@ -847,7 +881,11 @@ def main():
                 for idx, (algo_name, algo_func) in enumerate(algorithms):
                     with algo_cols[idx % 3]:
                         try:
-                            results = algo_func(numbers_history, hot_numbers)
+                            if algo_name == "Neural":
+                                results = algo_func(numbers_history, hot_numbers)
+                            else:
+                                results = algo_func(numbers_history, hot_numbers) if algo_name == "Tần suất" else algo_func(numbers_history)
+                            
                             st.write(f"**{algo_name}:**")
                             
                             if results:
@@ -857,37 +895,7 @@ def main():
                             else:
                                 st.write("Chưa đủ dữ liệu")
                         except Exception as e:
-                            st.write(f"**{algo_name}:** Lỗi phân tích")
-                
-                st.divider()
-                
-                # Algorithm performance comparison
-                st.subheader("⚖️ SO SÁNH HIỆU QUẢ THUẬT TOÁN")
-                
-                # Get all algorithm results
-                all_algo_results = {}
-                for algo_name, algo_func in algorithms:
-                    try:
-                        results = algo_func(numbers_history, hot_numbers)
-                        if results:
-                            all_algo_results[algo_name] = [p[0] for p in results[:5]]
-                    except:
-                        pass
-                
-                # Find common predictions
-                if all_algo_results:
-                    common_pairs = defaultdict(int)
-                    for algo_name, pairs in all_algo_results.items():
-                        for pair in pairs:
-                            common_pairs[pair] += 1
-                    
-                    # Display pairs with multiple algorithm support
-                    st.write("**Cặp số được nhiều thuật toán hỗ trợ:**")
-                    sorted_common = sorted(common_pairs.items(), key=lambda x: x[1], reverse=True)
-                    
-                    for pair, count in sorted_common[:5]:
-                        if count > 1:
-                            st.write(f"**{pair[0]}{pair[1]}:** {count}/6 thuật toán hỗ trợ")
+                            st.write(f"**{algo_name}:** Đang xử lý...")
     
     # ============ TAB 4: AI CONFIGURATION ============
     with tab4:
@@ -1023,7 +1031,7 @@ def main():
         st.caption("🤖 6 Thuật toán AI kết hợp")
     
     with col3:
-        st.caption("NUMCORE AI ULTIMATE v9.0 – Tối ưu 2 số 5 tính")
+        st.caption("NUMCORE AI ULTIMATE v9.1 – Tối ưu 2 số 5 tính")
 
 if __name__ == "__main__":
     main()
