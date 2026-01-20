@@ -1028,7 +1028,9 @@ def main():
                                 st.markdown("### 📊 Thống kê cơ bản")
                                 
                                 confidence = details.get('confidence', 0)
-                                st.progress(confidence/100, text=f"Độ tin cậy: {confidence}%")
+                                # FIXED: Ensure progress value is between 0 and 1
+                                progress_value = max(0.0, min(1.0, confidence/100))
+                                st.progress(progress_value, text=f"Độ tin cậy: {confidence}%")
                                 
                                 metrics_data = {
                                     "Điểm số AI": f"{details.get('score', 0):.3f}",
